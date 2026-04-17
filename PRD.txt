@@ -1,0 +1,527 @@
+=================================================================
+  PRODUCT REQUIREMENT DOCUMENT — VendorDesk.ai
+  Purpose: Complete rebuild reference for another coding platform
+  Version: 1.0  |  Date: April 2026
+=================================================================
+
+-----------------------------------------------------------------
+SECTION 1 — APP GOAL
+-----------------------------------------------------------------
+VendorDesk.ai is a mobile-first AI quotation generator built for
+small vendors and traders in India who conduct business primarily
+over WhatsApp.
+
+The app removes manual quotation work. A vendor types or speaks a
+customer's order in plain language (e.g. "50 kg rice and 20 bags
+cement"), and the app:
+  1. Matches items against the vendor's product catalogue using AI
+  2. Builds a structured, itemised quotation
+  3. Generates a professional PDF
+  4. Shares it directly to the customer's WhatsApp with one tap
+
+Philosophy: Mobile-first. WhatsApp-first. Offline-first.
+No complicated accounting software. No laptop required.
+
+-----------------------------------------------------------------
+SECTION 2 — TARGET USERS
+-----------------------------------------------------------------
+Primary Users:
+  - Small traders, wholesalers, retailers, and vendors in India
+  - Vendors who currently write quotes by hand or in WhatsApp chat
+  - Users with basic smartphone literacy; may not use email often
+
+Secondary Users:
+  - Freelancers and consultants generating ad-hoc service quotes
+  - Micro-enterprises with a small product catalogue (10–200 items)
+
+User Context:
+  - Mobile only (Android & iOS)
+  - Operate in English, Hindi, or Hinglish (mixed Hindi-English)
+  - Often have poor or intermittent internet connectivity
+  - Share everything via WhatsApp — not email
+
+-----------------------------------------------------------------
+SECTION 3 — FEATURES LIST
+-----------------------------------------------------------------
+
+F1 — AI Quotation Generation (Core Feature)
+  - Input: Natural language text describing a customer's order
+  - AI matches input keywords to vendor's product catalogue
+  - Output: Structured list of QuotationItems (name, qty, rate, unit)
+  - Handles multi-item orders in one prompt
+  - Handles partial matches and unknown items gracefully
+  - Supports English, Hindi, Hinglish prompts
+  - Conversation-style: vendor can clarify or add more items
+
+F2 — Voice Input
+  - Vendor taps a mic button and speaks the order
+  - Audio is sent to the backend for transcription (Gemini multimodal)
+  - Transcribed text is fed into the AI quotation flow
+
+F3 — Product Catalogue Management
+  - Vendor maintains a personal product list
+  - Each product: Name, Price (INR), Unit (kg/pcs/box/etc), HSN Code
+  - Add products manually
+  - Add products by uploading a price-list image (AI extracts products)
+  - Add products by uploading an Excel/CSV file
+  - Edit and delete products
+
+F4 — Lead / Customer Management
+  - Vendors track customers as "Leads"
+  - Each lead: Name, WhatsApp Number, Phone Number, Email
+  - Lead status lifecycle: Pending → Quote Created → PDF Shared
+  - Search leads by name or phone number
+  - Filter leads by date
+  - Export leads to CSV
+
+F5 — Interactive Quotation Editor
+  - After AI generates line items, vendor reviews them in a table
+  - Editable per row: Quantity, Rate, Unit, HSN Code
+  - Add new rows manually
+  - Remove rows
+  - Apply Discount: percentage (%) or flat amount (INR)
+  - Apply Tax: GST or VAT with configurable rate
+  - Add notes / special instructions at the bottom
+
+F6 — PDF Quotation Generation
+  - Generates a professional-looking PDF quotation document
+  - PDF layout includes:
+      * Vendor header: Business Name, Address, GST Number, Phone
+      * Customer: Lead name
+      * Quote Number and Date
+      * Itemised table: Sr No, Item, HSN, Qty, Unit, Rate, Amount
+      * Subtotal, Discount, Tax, Grand Total
+      * Notes section
+  - Rendered from an HTML template (Indian SMB aesthetic, teal theme)
+  - Currency formatted as INR (en-IN locale)
+
+F7 — WhatsApp Sharing
+  - One-tap share opens WhatsApp with customer's number pre-filled
+  - PDF attached to the message
+  - A pre-written message template is included
+  - Also supports plain-text share of quotation summary
+
+F8 — Vendor Business Profile
+  - One-time onboarding to set up the vendor's business details
+  - Fields: Business Name, Vendor Name, WhatsApp Number (with country
+    code), Email Address, Business Address, GST Number
+  - Profile photo / business logo upload
+  - Editable at any time from the Profile tab
+
+F9 — Offline-First with Background Sync
+  - ALL data is saved locally first (instant, no network needed)
+  - A background sync queue persists changes to cloud when online
+  - If offline: operations are queued; on reconnect they flush in order
+  - FIFO queue with mutex to prevent race conditions
+  - App is 100% functional without internet
+
+F10 — Optional Cloud Authentication & Sync
+  - Supabase email + OTP authentication (optional, for cloud sync)
+  - Enables cross-device data sync when signed in
+  - Unauthenticated users still get full offline functionality
+
+F11 — Sync Status Indicator
+  - Banner visible at top of screens when offline or syncing
+  - Clear feedback so vendor knows their data is safe
+
+-----------------------------------------------------------------
+SECTION 4 — SCREENS LIST
+-----------------------------------------------------------------
+
+S1 — Splash Screen
+  Purpose: Entry point; determines routing
+  UI: App logo, name "VendorDesk.ai", tagline "Smart Quotation Maker"
+      + loading indicator while checking onboarding/auth state
+  Logic: If first time → go to Onboarding; else → go to Home/Leads
+
+S2 — Auth Screen
+  Purpose: Optional email OTP login for cloud sync
+  UI Step 1 (Email): Single email input + Continue button
+  UI Step 2 (OTP): 8-digit OTP entry with individual input boxes
+                   Haptic feedback on each digit entered
+  Note: Skip button available; auth is optional
+
+S3 — Onboarding Screen
+  Purpose: First-time vendor profile setup
+  Fields: Business Name, Vendor Name, WhatsApp Number (country picker),
+          Address, GST Number (optional), Profile Photo
+  UI: Card-based form with circular avatar upload
+  Logic: Saves profile locally; routes to Home on completion
+
+S4 — Home / Leads Screen (Tab 1)
+  Purpose: Main dashboard; shows all customers/leads
+  UI Elements:
+    - Header with Lead count, date filter (calendar icon), CSV export
+    - Search bar (real-time filter by name or phone)
+    - Vertical list of Lead Cards showing:
+        Name, Phone, Status Badge (color-coded), Edit/Delete actions
+    - Floating Action Button (FAB) to add a new lead
+  Status Badge Colors:
+    - Pending: Grey/Yellow
+    - Quote Created: Blue
+    - PDF Shared: Green
+
+S5 — Add New Lead Screen
+  Purpose: Create a new customer record
+  Fields: Name, WhatsApp Number (country picker), Phone Number, Email
+  Toggle: "WhatsApp number same as phone" checkbox
+  Action: Save Lead → returns to Home with new lead added
+
+S6 — Edit Lead Screen
+  Purpose: Update existing customer details
+  Same fields as Add Lead; pre-populated with current data
+
+S7 — Catalogue Screen (Tab 2)
+  Purpose: Manage vendor's product list
+  UI: List of product cards (Name, Price/Unit, HSN Code) + Add button
+  Add Product Options:
+    - Manual form entry
+    - Upload price-list image → AI extracts products
+    - Upload Excel/CSV file → AI extracts products
+  Each product card: Edit and Delete actions
+
+S8 — Profile Screen (Tab 3)
+  Purpose: View and edit vendor business profile
+  UI: Profile photo, business name, all profile fields (editable)
+      Sync Status section (online/offline indicator)
+      Sign Out button
+
+S9 — AI Quotation Workspace
+  Purpose: The core AI interaction screen for creating a quotation
+  Route: /lead/[id]/quotation
+  UI: Chat-style interface
+    - Conversation bubbles (vendor input + AI response)
+    - Text input bar at the bottom
+    - Microphone button for voice input
+    - AI suggests matched line items in a structured bubble
+    - "Proceed to Review" button when items are ready
+  Logic:
+    - Sends message history + full product catalogue to AI backend
+    - AI returns JSON with matched and unmatched products
+    - Unmatched products shown with a warning; vendor can clarify
+
+S10 — Quotation Preview & Editor
+  Purpose: Review, edit, and finalise the AI-generated quotation
+  Route: /lead/[id]/preview
+  UI:
+    - Table of items: Columns: Item, Qty, Unit, Rate, Amount
+    - Each row is editable (tap to edit qty/rate/unit/HSN)
+    - "Add Item" row button
+    - Discount toggle: Off / Percentage / Flat Amount input
+    - Tax toggle: Off / GST / VAT with % rate input
+    - Notes text area at bottom
+    - "Generate PDF" primary button
+  Calculations: Auto-compute subtotal, discount, tax, grand total
+
+S11 — PDF Viewer & Share Screen
+  Purpose: Show final PDF and share with customer
+  Route: /lead/[id]/pdf
+  UI: In-app PDF / HTML preview of the quotation document
+      "Share on WhatsApp" button (primary, prominent)
+      "Share as Text" button (secondary)
+  Logic: Opens WhatsApp app with customer's number + PDF attached
+         Updates lead status to "PDF Shared"
+
+-----------------------------------------------------------------
+SECTION 5 — USER FLOWS
+-----------------------------------------------------------------
+
+FLOW A — First-Time Setup
+  Launch App → Splash → Onboarding (business details) → Home
+
+FLOW B — Build Product Catalogue
+  Home → Catalogue Tab → Add Product (manual / image / CSV) → Save
+
+FLOW C — Create Quotation for a New Customer
+  Home → FAB (Add Lead) → Enter Customer Details → Save
+  → Lead appears in list → Tap Lead
+  → AI Quotation Workspace
+  → Type or speak: "2 bags cement and 10 kg sand"
+  → AI responds with matched items and quantities
+  → Tap "Proceed to Review"
+  → Quotation Preview: adjust qty/rates, set discount/tax, add notes
+  → Tap "Generate PDF"
+  → PDF Viewer: review document
+  → Tap "Share on WhatsApp"
+  → WhatsApp opens, customer number pre-filled, PDF attached
+  → Lead status updates to "PDF Shared"
+
+FLOW D — Revisit an Existing Lead
+  Home → Search / scroll to lead → Tap Lead
+  → AI Workspace (start fresh or continue)
+  → Edit quotation → Re-generate PDF → Share again
+
+FLOW E — Offline Usage
+  No internet: App works normally
+  All changes saved locally
+  On reconnect: background sync pushes changes to cloud automatically
+
+-----------------------------------------------------------------
+SECTION 6 — DATA MODELS
+-----------------------------------------------------------------
+
+VendorProfile
+  id             : string (UUID)
+  businessName   : string
+  vendorName     : string
+  whatsappNumber : string (with country code)
+  email          : string
+  address        : string
+  gstNumber      : string (optional)
+  profilePhoto   : string (base64 or URL, optional)
+
+Product
+  id       : string (UUID)
+  name     : string
+  price    : number (INR)
+  unit     : string (kg / pcs / box / litre / etc)
+  hsnCode  : string (optional)
+
+Lead
+  id              : string (UUID)
+  name            : string
+  whatsappNumber  : string
+  phoneNumber     : string
+  email           : string (optional)
+  status          : enum [ "Pending", "Quote Created", "PDF Shared" ]
+  createdAt       : timestamp
+
+Quotation
+  id          : string (UUID)
+  leadId      : string (FK → Lead)
+  quoteNumber : string (auto-incremented, e.g. "QT-0042")
+  items       : QuotationItem[]
+  notes       : string
+  discount    : { type: "percent" | "flat", value: number }
+  tax         : { label: string, rate: number }
+  createdAt   : timestamp
+
+QuotationItem
+  id       : string (UUID)
+  name     : string
+  quantity : number
+  unit     : string
+  rate     : number (INR)
+  hsnCode  : string (optional)
+  amount   : number (computed: quantity × rate)
+
+SyncQueueOperation (internal, for offline sync)
+  id        : string
+  type      : "upsert_product" | "delete_product" |
+              "upsert_lead"    | "delete_lead"    |
+              "upsert_quotation"
+  payload   : object (the data to sync)
+  timestamp : number (epoch ms)
+
+-----------------------------------------------------------------
+SECTION 7 — DATA INPUT / OUTPUT SUMMARY
+-----------------------------------------------------------------
+
+INPUTS:
+  Text/Voice  → Natural language order (e.g. "100 tiles, 5 bags cement")
+  Form        → Lead details, vendor profile, product details
+  File/Image  → Price list photo or CSV for catalogue import
+  OTP         → Email-based authentication
+
+OUTPUTS:
+  Structured Quotation → JSON object with all line items and totals
+  PDF Document         → Professional, formatted quotation file
+  WhatsApp Message     → Pre-filled message + PDF sent to customer
+  CSV Export           → Lead list exportable to spreadsheet
+
+-----------------------------------------------------------------
+SECTION 8 — BACKEND / API ARCHITECTURE
+-----------------------------------------------------------------
+
+The backend is a lightweight Node.js + Express API server.
+It acts as an AI orchestration proxy — it does NOT store data itself.
+
+Base URL: /api
+
+Endpoints:
+
+  GET  /health
+       → Returns { status: "ok" }
+
+  POST /ai/chat
+       Body: { messages: ChatMessage[], catalogue: Product[] }
+       Returns: {
+         matched: [ { name, quantity, unit, rate, hsnCode } ],
+         unmatched: [ string ]
+       }
+       Logic: Sends system prompt + catalogue + message history
+              to Gemini 2.5 Flash. Strict JSON output mode.
+              System prompt instructs model to act as a quotation
+              assistant, match items to catalogue, infer quantities,
+              and return structured JSON only.
+
+  POST /ai/transcribe
+       Body: { audioBase64: string, mimeType: string }
+       Returns: { text: string }
+       Logic: Sends audio to Gemini multimodal model for transcription.
+
+  POST /ai/extract-catalogue
+       Body: { dataBase64: string, mimeType: string }
+       Returns: [ { name, price, unit } ]
+       Logic: Sends image or CSV to Gemini with a prompt to extract
+              a product list with prices.
+
+AI Model: gemini-2.5-flash-lite (via Google Generative AI SDK)
+Prompt strategy: Strict JSON mode enforced in system instruction.
+                 Markdown stripped from responses before parsing.
+
+-----------------------------------------------------------------
+SECTION 9 — FRONTEND TECH STACK (RECOMMENDED FOR REBUILD)
+-----------------------------------------------------------------
+
+Framework   : React Native with Expo (SDK 54+)
+Language    : TypeScript
+Navigation  : Expo Router (file-based, similar to Next.js)
+State Mgmt  : React Context API + custom hooks
+
+Core Libraries:
+  - @supabase/supabase-js        — Auth + cloud database
+  - @tanstack/react-query        — Server state / data fetching
+  - zod                          — Schema validation
+  - lucide-react-native          — Icon set
+
+UI / Animations:
+  - react-native-reanimated      — Smooth animations
+  - expo-blur                    — Blur effects
+  - expo-haptics                 — Haptic feedback
+  - react-native-keyboard-controller — Keyboard-aware layouts
+
+Media & Files:
+  - expo-print                   — PDF generation from HTML
+  - expo-sharing                 — Share files natively
+  - expo-image-picker            — Camera / photo library
+  - expo-document-picker         — File picker (PDF, CSV, Excel)
+  - expo-file-system             — File read/write
+  - expo-av                      — Audio recording
+
+Voice:
+  - expo-speech-recognition      — Speech-to-text
+
+Storage:
+  - @react-native-async-storage/async-storage — Local key-value store
+
+Network:
+  - @react-native-community/netinfo — Network connectivity detection
+
+-----------------------------------------------------------------
+SECTION 10 — DATABASE SCHEMA (SUPABASE / POSTGRESQL)
+-----------------------------------------------------------------
+
+Table: vendor_profiles
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id         UUID REFERENCES auth.users
+  business_name   TEXT
+  vendor_name     TEXT
+  whatsapp_number TEXT
+  email           TEXT
+  address         TEXT
+  gst_number      TEXT
+  created_at      TIMESTAMPTZ DEFAULT now()
+  updated_at      TIMESTAMPTZ DEFAULT now()
+
+Table: products
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id    UUID REFERENCES auth.users
+  name       TEXT NOT NULL
+  price      NUMERIC NOT NULL
+  unit       TEXT
+  hsn_code   TEXT
+  created_at TIMESTAMPTZ DEFAULT now()
+  updated_at TIMESTAMPTZ DEFAULT now()
+
+Table: leads
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id          UUID REFERENCES auth.users
+  name             TEXT NOT NULL
+  whatsapp_number  TEXT
+  phone_number     TEXT
+  email            TEXT
+  status           TEXT DEFAULT 'Pending'
+  created_at       TIMESTAMPTZ DEFAULT now()
+  updated_at       TIMESTAMPTZ DEFAULT now()
+
+Table: quotations
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id      UUID REFERENCES auth.users
+  lead_id      UUID REFERENCES leads(id)
+  quote_number TEXT
+  items        JSONB
+  notes        TEXT
+  discount     JSONB
+  tax          JSONB
+  created_at   TIMESTAMPTZ DEFAULT now()
+  updated_at   TIMESTAMPTZ DEFAULT now()
+
+Row Level Security: All tables use RLS so each user sees only
+                    their own data (WHERE user_id = auth.uid()).
+
+-----------------------------------------------------------------
+SECTION 11 — KEY BUSINESS LOGIC TO IMPLEMENT
+-----------------------------------------------------------------
+
+1. OFFLINE-FIRST PATTERN
+   Every write operation must:
+   a) Update React state immediately (optimistic UI)
+   b) Save to AsyncStorage (local persistence)
+   c) Attempt to sync to Supabase
+   d) If sync fails → add to a FIFO sync queue in AsyncStorage
+   On reconnect: flush the queue in order, stop on first failure.
+   Use a mutex/lock to prevent concurrent queue writes.
+
+2. QUOTATION NUMBER GENERATION
+   Auto-increment per vendor. Format: "QT-XXXX" (e.g. QT-0042).
+   Store the last used number in vendor profile or local counter.
+
+3. PDF GENERATION APPROACH
+   Generate an HTML string with inline CSS (no external stylesheets).
+   Use expo-print to convert HTML → PDF file.
+   Store PDF temporarily in the device's file system.
+   Use expo-sharing to share the file.
+
+4. WHATSAPP DEEP LINK
+   Format: "https://wa.me/{countryCode}{number}?text={encodedMessage}"
+   Use Linking.openURL() to open WhatsApp with pre-filled message.
+   Attach PDF separately via the native share sheet.
+
+5. AI CHAT CONTEXT
+   Always send the full product catalogue with every AI request.
+   Send message history (last N turns) so the AI can handle
+   multi-turn order conversations.
+   Strip markdown code fences (```json ... ```) from AI responses
+   before JSON.parse().
+
+6. CATALOGUE IMPORT FROM IMAGE/FILE
+   Convert image/file to base64 before sending to API.
+   API sends to Gemini with a prompt like:
+   "Extract all products with prices from this document.
+    Return JSON array: [{name, price, unit}]"
+
+-----------------------------------------------------------------
+SECTION 12 — LANGUAGES & LOCALISATION
+-----------------------------------------------------------------
+  Primary  : English
+  Secondary: Hindi
+  Mixed    : Hinglish (Hindi-English code-switching)
+
+The AI prompt must explicitly instruct the model to understand
+and respond to all three. Currency must display in INR (₹)
+with en-IN locale formatting.
+
+-----------------------------------------------------------------
+SECTION 13 — OUT OF SCOPE (NOT NEEDED FOR MVP)
+-----------------------------------------------------------------
+  - Invoice / receipt generation (separate from quotation)
+  - Payment collection or billing
+  - Multi-user / team accounts
+  - Web version (mobile-only MVP)
+  - Custom branding / white-label
+  - Analytics dashboard
+
+=================================================================
+  END OF PRD — VendorDesk.ai Rebuild Reference
+=================================================================

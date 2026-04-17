@@ -1,0 +1,630 @@
+# VendorDesk — Final MVP Document
+
+---
+
+## App Overview
+
+VendorDesk is a mobile app for small vendors in India who run their business on WhatsApp. The app helps them create quotations fast using AI, manage their leads, and share quotes directly on WhatsApp — without replacing WhatsApp or learning complicated software.
+
+**No login. No authentication. Vendor simply onboards once and starts using the app.**
+
+---
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| AI Model | OpenRouter — google/gemini-flash-lite-preview |
+| Input Types | Text, Voice, Image |
+| Backend | Supabase |
+| Database | Supabase |
+| Cloud Functions | Supabase |
+| Authentication | None in MVP |
+| Pricing | Free |
+
+---
+
+## Total Screens — 8 Screens
+
+| # | Screen |
+|---|---|
+| 1 | Splash |
+| 2 | Vendor Onboarding |
+| 3 | Catalogue |
+| 4 | Leads (Home) |
+| 5 | Add Lead + Quotation Flow |
+| 6 | Quotation Preview & Editor |
+| 7 | PDF Viewer |
+| 8 | Profile |
+
+**3 Bottom Tab Screens (visible after onboarding):**
+- Tab 1 → Leads (Home)
+- Tab 2 → Catalogue
+- Tab 3 → Profile
+
+---
+
+## Screen 1 — Splash
+
+### Purpose
+App entry point. Decides where to send the user.
+
+### Elements
+- App logo (center)
+- App name
+- Loading indicator
+
+### Wireframe
+```
+┌─────────────────────────┐
+│                         │
+│                         │
+│         [LOGO]          │
+│       VendorDesk        │
+│                         │
+│                         │
+│        ░░░░░░░          │
+└─────────────────────────┘
+```
+
+### Navigation
+- Vendor not onboarded → Screen 2 (Onboarding)
+- Vendor already onboarded → Screen 4 (Leads / Home)
+
+---
+
+## Screen 2 — Vendor Onboarding
+
+### Purpose
+One-time setup screen. Vendor fills in their business details. No login or OTP required. After saving, vendor lands on the home screen and never sees this screen again unless they go to Profile to edit.
+
+### Elements
+- Heading: "Set up your business"
+- Business name field (required)
+- Vendor name field (required)
+- WhatsApp number field (required)
+- Email field (required)
+- Address field (required)
+- Save & Continue button
+
+### Wireframe
+```
+┌─────────────────────────┐
+│                         │
+│   Set up your business  │
+│                         │
+│  ┌─────────────────────┐│
+│  │ Business Name *     ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Your Name *         ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ WhatsApp Number *   ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Email *             ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Address *           ││
+│  └─────────────────────┘│
+│                         │
+│   [ Save & Continue ]   │
+│                         │
+└─────────────────────────┘
+```
+
+### Navigation
+- Save & Continue → Screen 3 (Catalogue)
+
+---
+
+## Screen 3 — Catalogue
+
+### Purpose
+Vendor builds their product catalogue here. The AI uses this catalogue when creating quotations. This screen is also accessible anytime from the bottom tab.
+
+### Elements
+- Screen heading: "Catalogue"
+- Search bar (search products)
+- Product list — each product card shows:
+  - Product name
+  - Price
+  - Unit
+  - Edit icon
+  - Delete icon
+- Empty state message when no products added yet
+- Add Product button — plus icon (bottom right, floating)
+
+### Add Product — 3 Options (shown as tabs or toggle when plus is tapped)
+
+**Option 1 — Manual Entry (Primary / Default)**
+- Product name field
+- Price field
+- Unit field (e.g. kg, piece, litre, box)
+- Save button
+
+**Option 2 — Upload Image**
+- Upload image button
+- AI reads the image and extracts product details
+- Extracted items shown in a review list
+- Vendor can edit each item before saving
+- Save All button
+
+**Option 3 — Upload Excel**
+- Upload Excel file button
+- Items extracted and shown in review list
+- Vendor can edit each item before saving
+- Save All button
+
+### Wireframe
+```
+┌─────────────────────────┐
+│  Catalogue              │
+│                         │
+│  🔍 Search products     │
+│                         │
+│  ┌─────────────────────┐│
+│  │ Basmati Rice        ││
+│  │ ₹ 80 / kg    ✎  🗑 ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Toor Dal            ││
+│  │ ₹ 120 / kg   ✎  🗑 ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Sunflower Oil       ││
+│  │ ₹ 150 / ltr  ✎  🗑 ││
+│  └─────────────────────┘│
+│                         │
+│                    [＋] │
+├─────────┬───────────────┤
+│  Leads  │ Catalogue │ Profile │
+└─────────────────────────┘
+
+── Add Product (bottom sheet) ──
+┌─────────────────────────┐
+│  Add Product            │
+│  [Manual] [Image] [Excel]│
+│                         │
+│  ┌─────────────────────┐│
+│  │ Product Name        ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Price               ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Unit (kg/pc/ltr..)  ││
+│  └─────────────────────┘│
+│                         │
+│        [ Save ]         │
+└─────────────────────────┘
+```
+
+### Navigation
+- This screen is always accessible via Tab 2 in bottom navigation
+- Add product → stays on same screen, list updates
+
+---
+
+## Screen 4 — Leads (Home Screen)
+
+### Purpose
+Main home screen. Shows all leads. Vendor can search, filter, and add new leads from here.
+
+### Elements
+- Screen heading: "Leads"
+- Date filter button (top right) — filters leads by created date
+- Search bar — search by lead name
+- Leads list — each lead card shows:
+  - Lead name
+  - WhatsApp number
+  - Status label: Quote Created / PDF Shared / Pending
+  - Date created
+- Empty state when no leads added yet
+- Add Lead button — bottom right, floating plus icon
+
+### Wireframe
+```
+┌─────────────────────────┐
+│  Leads            [📅]  │
+│                         │
+│  🔍 Search leads        │
+│                         │
+│  ┌─────────────────────┐│
+│  │ Rahul Sharma        ││
+│  │ +91 98765 43210     ││
+│  │ Quote Created · 2d  ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Priya Traders       ││
+│  │ +91 91234 56789     ││
+│  │ PDF Shared · 5d     ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Mohan Supplies      ││
+│  │ +91 99887 76655     ││
+│  │ Pending · 1d        ││
+│  └─────────────────────┘│
+│                    [＋] │
+├─────────────────────────┤
+│  Leads  │ Catalogue │ Profile │
+└─────────────────────────┘
+```
+
+### Navigation
+- Tap existing lead card → Screen 5 (AI Quotation Workspace) for that lead
+- Tap plus button → Screen 5 (Add Lead form first)
+- Tab 2 → Screen 3 (Catalogue)
+- Tab 3 → Screen 8 (Profile)
+
+---
+
+## Screen 5 — Add Lead + AI Quotation Workspace
+
+### Purpose
+This screen has two parts that flow one after the other. First the vendor adds the lead details, then immediately enters the AI chat workspace to create a quotation for that lead.
+
+---
+
+### Part A — Add Lead Form
+
+### Elements
+- Screen heading: "New Lead"
+- Lead name field (required)
+- WhatsApp number field (required)
+- Email field (optional)
+- Two buttons at bottom:
+  - Save — saves the lead and goes back to Leads screen
+  - Continue to Create Quotation — saves the lead and opens Part B
+
+### Wireframe
+```
+┌─────────────────────────┐
+│ ←  New Lead             │
+│                         │
+│  ┌─────────────────────┐│
+│  │ Lead Name *         ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ WhatsApp Number *   ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Email (optional)    ││
+│  └─────────────────────┘│
+│                         │
+│                         │
+│                         │
+│  ┌─────────────────────┐│
+│  │        Save         ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │Continue to Create   ││
+│  │     Quotation       ││
+│  └─────────────────────┘│
+└─────────────────────────┘
+```
+
+---
+
+### Part B — AI Quotation Workspace
+
+### Purpose
+Chat-type interface where the vendor talks to the AI to create a quotation. The vendor is not chatting with the customer — only with the AI. Input can be text or voice.
+
+### Elements
+- Back button
+- Lead name at top
+- Lead WhatsApp number below name
+- Chat timeline showing the conversation with AI
+- AI message bubbles (left side)
+- Vendor message bubbles (right side)
+- Input bar at bottom:
+  - Text input field: "Type your requirement..."
+  - Voice button — tap to speak
+- Send button
+
+### How the AI Flow Works
+
+```
+AI opens with:
+"Hi! Tell me what products you want 
+to add in this quotation."
+
+Vendor sends (text or voice):
+"5 kg rice 10 ltr milk"
+
+AI checks catalogue:
+  ✓ Rice found → adds to quotation
+  ✗ Milk not found → AI replies:
+    "Milk is not in your catalogue."
+    [ Add to Catalogue ]
+    [ Just Add to Quotation ]
+
+Vendor taps one of the 2 buttons.
+
+AI continues processing remaining items.
+
+Once all items are processed AI replies:
+"Here is your quotation."
+[ View Quotation Preview ]
+```
+
+### Wireframe
+```
+┌─────────────────────────┐
+│ ←  Rahul Sharma         │
+│    +91 98765 43210      │
+│─────────────────────────│
+│                         │
+│  ┌───────────────────┐  │
+│  │ Hi! Tell me what  │  │
+│  │ products you want │  │
+│  │ in this quotation │  │
+│  └───────────────────┘  │
+│                         │
+│         ┌─────────────┐ │
+│         │5 kg rice    │ │
+│         │10 ltr milk  │ │
+│         └─────────────┘ │
+│                         │
+│  ┌───────────────────┐  │
+│  │ Milk is not in    │  │
+│  │ your catalogue.   │  │
+│  │                   │  │
+│  │ [Add to Catalogue]│  │
+│  │ [Just Add to      │  │
+│  │  Quotation]       │  │
+│  └───────────────────┘  │
+│                         │
+│  ┌───────────────────┐  │
+│  │ Here is your      │  │
+│  │ quotation.        │  │
+│  │ [View Preview]    │  │
+│  └───────────────────┘  │
+│─────────────────────────│
+│ 🎤 Type requirement.. ➤ │
+└─────────────────────────┘
+```
+
+### Navigation
+- View Preview → Screen 6 (Quotation Preview & Editor)
+- Back → Screen 4 (Leads)
+
+---
+
+## Screen 6 — Quotation Preview & Editor
+
+### Purpose
+Vendor reviews the full quotation generated by AI. They can edit any item directly on this screen before generating the PDF.
+
+### Elements
+**Header:**
+- Back button
+- Screen heading: "Quotation Preview"
+
+**Quotation details:**
+- Business name (auto-filled from profile)
+- Lead name
+- Date (auto)
+- Quotation number (auto-generated)
+
+**Editable item table:**
+- Item name
+- Quantity
+- Unit
+- Rate
+- Line total
+- Edit icon on each row
+- Delete icon on each row
+- Add item row button
+
+**Summary section:**
+- Subtotal
+- Grand total
+
+**Notes field (optional)**
+
+**Bottom button:**
+- Create PDF button
+
+### Wireframe
+```
+┌─────────────────────────┐
+│ ←  Quotation Preview    │
+│                         │
+│  VendorDesk Traders     │
+│  For: Rahul Sharma      │
+│  Date: 30 Mar 2026      │
+│  Quote #: QT-001        │
+│                         │
+│  ┌──────┬────┬────┬────┐│
+│  │ Item │ Qty│Rate│ Tot││
+│  ├──────┼────┼────┼────┤│
+│  │ Rice │ 5kg│ 80 │400 ││  ✎ 🗑
+│  │ Milk │10lt│150 │1500││  ✎ 🗑
+│  └──────┴────┴────┴────┘│
+│  + Add item             │
+│                         │
+│  Subtotal:    ₹ 1,900   │
+│  Total:       ₹ 1,900   │
+│                         │
+│  Notes: _______________ │
+│                         │
+│      [ Create PDF ]     │
+└─────────────────────────┘
+```
+
+### Navigation
+- Create PDF → Screen 7 (PDF Viewer)
+- Back → Screen 5 (AI Workspace)
+
+---
+
+## Screen 7 — PDF Viewer
+
+### Purpose
+The generated PDF is displayed on this screen. Vendor can download it or share it directly on WhatsApp with the lead.
+
+### Elements
+- Back button
+- Screen heading: "Quotation PDF"
+- Full PDF preview (rendered inline)
+- Two buttons at bottom:
+  - Download — saves PDF to device
+  - Share on WhatsApp — opens WhatsApp with:
+    - Lead's WhatsApp number pre-filled
+    - PDF attached
+    - Pre-written message:
+      > "Hi [Lead Name], I am [Business Name]. Here is your quotation."
+
+### Wireframe
+```
+┌─────────────────────────┐
+│ ←  Quotation PDF        │
+│                         │
+│  ┌─────────────────────┐│
+│  │                     ││
+│  │   PDF PREVIEW       ││
+│  │                     ││
+│  │  VendorDesk Traders ││
+│  │  Quote for:         ││
+│  │  Rahul Sharma       ││
+│  │                     ││
+│  │  Rice  5kg   ₹ 400  ││
+│  │  Milk  10lt  ₹1,500 ││
+│  │                     ││
+│  │  Total:    ₹ 1,900  ││
+│  │                     ││
+│  └─────────────────────┘│
+│                         │
+│  ┌─────────────────────┐│
+│  │     Download        ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │  Share on WhatsApp  ││
+│  └─────────────────────┘│
+└─────────────────────────┘
+```
+
+### Navigation
+- Download → saves to device, stays on screen
+- Share on WhatsApp → opens WhatsApp externally with lead number and PDF pre-filled
+- Back → Screen 6 (Quotation Preview)
+
+---
+
+## Screen 8 — Profile
+
+### Purpose
+Vendor can view and edit their business details that were entered during onboarding. This is accessible anytime from the bottom tab.
+
+### Elements
+- Screen heading: "Profile"
+- Business name (editable)
+- Vendor name (editable)
+- WhatsApp number (editable)
+- Email (editable)
+- Address (editable)
+- Save Changes button
+
+### Wireframe
+```
+┌─────────────────────────┐
+│  Profile                │
+│                         │
+│  ┌─────────────────────┐│
+│  │ Business Name       ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Your Name           ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ WhatsApp Number     ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Email               ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Address             ││
+│  └─────────────────────┘│
+│                         │
+│    [ Save Changes ]     │
+│                         │
+├─────────────────────────┤
+│  Leads  │ Catalogue │ Profile │
+└─────────────────────────┘
+```
+
+### Navigation
+- Save Changes → stays on Profile screen, data updated
+- Tab 1 → Screen 4 (Leads)
+- Tab 2 → Screen 3 (Catalogue)
+
+---
+
+## Complete Navigation Flow
+
+```
+Screen 1: Splash
+     │
+     ├── First time ──────────→ Screen 2: Vendor Onboarding
+     │                                   │
+     │                                   └──→ Screen 3: Catalogue
+     │                                              │
+     │                                              └──→ Screen 4: Leads (Home)
+     │
+     └── Returning user ──────→ Screen 4: Leads (Home)
+                                         │
+                    ┌────────────────────┘
+                    │
+                    ├── Tap existing lead ──→ Screen 5B: AI Workspace
+                    │                                  │
+                    └── Tap + Add Lead ──→ Screen 5A: Add Lead Form
+                                                    │
+                                         ┌──────────┴──────────┐
+                                         │                     │
+                                      [ Save ]    [ Continue to Quotation ]
+                                         │                     │
+                                  Screen 4: Leads    Screen 5B: AI Workspace
+                                                               │
+                                                      [ View Preview ]
+                                                               │
+                                                    Screen 6: Quotation Preview
+                                                               │
+                                                        [ Create PDF ]
+                                                               │
+                                                    Screen 7: PDF Viewer
+                                                               │
+                                              ┌────────────────┴──────────────┐
+                                              │                               │
+                                        [ Download ]              [ Share on WhatsApp ]
+                                        Saves to device         Opens WhatsApp externally
+                                                                with lead number + PDF
+
+
+Bottom Tab Navigation (always visible after onboarding):
+┌───────────┬───────────┬───────────┐
+│   Leads   │ Catalogue │  Profile  │
+│ Screen 4  │ Screen 3  │ Screen 8  │
+└───────────┴───────────┴───────────┘
+```
+
+---
+
+## What Each Screen Owns
+
+| Screen | Owns |
+|---|---|
+| Splash | Entry routing |
+| Vendor Onboarding | One-time business setup, no login |
+| Catalogue | Full product list, add by text, image or excel |
+| Leads | All leads, search, filter, add new lead |
+| Add Lead + AI Workspace | Lead form + AI quotation creation by text or voice |
+| Quotation Preview & Editor | Review and edit AI-generated quotation |
+| PDF Viewer | View, download, share quotation PDF on WhatsApp |
+| Profile | View and edit business details anytime |
+
+---
+
+*End of VendorDesk Final MVP Document*

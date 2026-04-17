@@ -1,0 +1,59 @@
+Comprehensive Technical Audit: Vendor-Desk
+
+Main Idea:
+The "Vendor-Desk" application is a mobile-first platform, developed using React Native with Expo, designed to facilitate operations for vendors. It integrates with a Supabase backend for data persistence, authentication, and potentially real-time functionalities. The codebase also includes a local API server component, which may provide additional business logic or serve as a proxy for backend interactions.
+
+Technology Stack:
+*   Frontend (Mobile): React Native with Expo, developed primarily in TypeScript. It leverages the Expo framework for simplified development, build processes, and cross-platform compatibility.
+*   Backend/Database: Supabase is utilized as the primary backend-as-a-service, offering database capabilities (likely PostgreSQL), authentication, and real-time subscriptions.
+*   API Communication: The application uses `@tanstack/react-query` for efficient data fetching, caching, and state management. The API client code (`lib/api-client-react`) is automatically generated using `orval` from an OpenAPI specification (`lib/api-spec`), ensuring type safety and consistency with the backend API.
+*   Schema Validation: Zod is employed for defining and validating API schemas (`lib/api-zod`), providing robust data validation at runtime.
+*   Package Management: The project is structured as a monorepo, managed by `pnpm`, which optimizes disk space usage and installation times for packages.
+*   Local API Server: A Node.js-based API server (`artifacts/api-server`) is part of the project, suggesting custom backend logic, data processing, or serving as an intermediary for external services.
+
+API & Secrets:
+*   External APIs Used:
+    *   Supabase: The core backend service.
+    *   Other APIs: While not explicitly identified, the `api-server` and `customFetch` mechanism indicate potential integration with other external APIs.
+*   API Keys/Environment Variables:
+    *   `EXPO_PUBLIC_SUPABASE_URL`: The URL for the Supabase project.
+    *   `EXPO_PUBLIC_SUPABASE_ANON_KEY`: The public anonymous key for client-side access to Supabase.
+    *   Location: These environment variables are accessed within `D:/New folder/Vendor-Desk/Vendor-Desk/artifacts/mobile/services/supabase.ts` (lines 4-5). For an Expo project, these variables typically need to be defined in `.env` files (e.g., `.env`, `.env.development`, `.env.production`) at the root of the `artifacts/mobile` directory, or configured directly within the `app.json` file's `extra` field, or set as environment variables during the build and deployment process via the Expo CLI or CI/CD pipelines.
+    *   Any other API keys required by the `api-server` (e.g., for AI services in `artifacts/api-server/src/routes/ai.ts` or other third-party integrations) would also be expected to be provided via environment variables, likely accessed via `process.env`.
+
+Platform Compatibility:
+*   Android: Fully compatible through the Expo/React Native framework, allowing for native Android application deployment.
+*   iOS: Fully compatible through the Expo/React Native framework, allowing for native iOS application deployment.
+*   Web: While React Native Expo has capabilities for web builds, the project structure specifically focuses on mobile development within the `artifacts/mobile` directory. A dedicated web build configuration was not explicitly found, but the underlying React/TypeScript codebase makes it potentially adaptable for a web frontend.
+
+UI/UX Mapping:
+The application's UI/UX is structured using Expo Router for navigation and React Native components.
+*   Screens/Pages:
+    *   `_layout.tsx`: Defines the overarching layout and navigation stack using Expo Router.
+    *   `(tabs)`: A directory containing screens organized under a tab-based navigator (e.g., a bottom tab bar) for primary application features (e.g., a dashboard, product listings, order management, settings).
+    *   `auth.tsx`: Handles user authentication flows, including login and signup.
+    *   `index.tsx`: The initial entry point of the application, potentially serving as a splash screen or a redirect based on authentication status.
+    *   `onboarding.tsx`: Guides new users through an initial setup or introduction to the application's features.
+    *   `lead/`: A nested directory containing screens dedicated to managing "leads" or vendor-specific entities. This would include views for listing leads, displaying detailed lead information, and potentially creating/editing leads.
+    *   `+not-found.tsx`: A fallback screen displayed when a navigated route does not match any defined paths.
+*   Navigation Flow:
+    *   Upon launching, the app likely directs to `index.tsx`.
+    *   Based on user state (new user, authenticated, etc.), navigation proceeds to `onboarding.tsx`, `auth.tsx`, or directly into the main application via the `(tabs)` navigator.
+    *   The `(tabs)` navigator provides access to the core functionalities, from which users can navigate to specific feature screens like those within the `lead/` directory.
+
+System Architecture:
+The codebase employs a monorepo architecture, managed by `pnpm`, organizing various parts of the application into distinct packages:
+*   `lib/`: Contains shared libraries and utilities used across different parts of the monorepo.
+    *   `api-client-react`: The generated React Query client for interacting with the backend API.
+    *   `api-spec`: The OpenAPI specification that defines the structure of the application's APIs.
+    *   `api-zod`: Zod schemas for validating data structures, ensuring type integrity between frontend and backend.
+    *   `db`: Likely holds database-related code, such as type definitions, client interfaces, or migration scripts.
+*   `artifacts/mobile/`: The core Expo React Native application.
+    *   `app/`: Houses the main application screens and defines the navigation structure using Expo Router.
+    *   `components/`: Stores reusable UI components.
+    *   `services/`: Contains modular service logic, such as the Supabase client initialization (`supabase.ts`).
+    *   `assets/`: Dedicated for static assets like images, icons, and fonts.
+    *   `constants/`: Stores application-wide constants and configurations.
+    *   `hooks/`: Contains custom React hooks for reusable logic.
+*   `artifacts/api-server/`: A separate Node.js server application. This serves as a backend component that might handle server-side logic, interact with Supabase, or integrate with other third-party services (e.g., AI models as suggested by `src/routes/ai.ts`).
+*   `artifacts/mockup-sandbox/`: A development-focused environment for prototyping, testing, and showcasing UI components or specific user flows in isolation.

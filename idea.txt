@@ -1,0 +1,13 @@
+App: VendorDesk.ai
+
+Idea:
+VendorDesk.ai is a mobile app that helps small business vendors and field salespeople manage their leads, create professional quotes/estimates on the spot, and share them instantly via WhatsApp as PDFs — all from their phone.
+
+Target User:
+Small business owners and independent vendors — particularly in India — who sell products or services on the ground (e.g., suppliers, traders, contractors, freelancers). These users are typically not tech-savvy, work on the go, and do not have access to desktop-based quoting or CRM tools.
+
+Pain Points This App Solves:
+- Creating quotes manually (on paper or WhatsApp messages) is slow, unprofessional, and error-prone
+- There is no easy way to track which leads have been quoted, follow up, or see quote history
+- Sharing a polished, branded PDF quote from a phone without a laptop or office software is nearly impossible
+- Vendors lose deals because they can't respond to customers quickly with a proper quote

@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "VendorDesk.ai",
+    "slug": "vendorbot-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "mobile",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.replit.vendordesk"
+    },
+    "android": {
+      "package": "com.replit.vendordesk"
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Inter_400Regular.ttf",
+            "./assets/fonts/Inter_500Medium.ttf",
+            "./assets/fonts/Inter_600SemiBold.ttf",
+            "./assets/fonts/Inter_700Bold.ttf"
+          ]
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

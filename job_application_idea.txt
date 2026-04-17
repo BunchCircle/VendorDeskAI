@@ -1,0 +1,44 @@
+Question 1: Tell us about a cool AI project you have worked on?
+
+One of the projects I'm genuinely proud of is VendorDesk — an AI-powered quotation generator I built for small vendors, traders, and wholesalers, primarily in India.
+
+The problem was pretty clear once I spent time talking to a few traders: these folks run their entire business on WhatsApp. A customer messages them asking for a quote, and they either reply with a rough text message or scramble to make a PDF manually — sometimes spending 15–20 minutes on a single quotation. For a vendor juggling 30–40 customers a day, that's a huge time sink, and the output still looks unprofessional.
+
+My approach was to build a mobile app that lets a vendor describe an order the way they'd naturally say it — in English, Hindi, or Hinglish — and have AI do the heavy lifting. So instead of filling out a form line by line, a vendor can say or type something like "50 kg basmati, 2 bags cement, 10 litre sarso oil" and the app extracts each line item, matches it against their product catalogue, pulls in the right prices and units, and generates a clean, branded PDF quotation — ready to share on WhatsApp in under a minute.
+
+I also added a voice-to-quotation flow using multimodal AI, so vendors who aren't comfortable typing can just record a voice note of the customer's order. On top of that, I built a catalogue extraction feature where vendors can photograph their physical rate card or price list and the app automatically populates their product catalogue — which removed a big onboarding hurdle.
+
+The app works offline-first since connectivity in smaller towns can be unreliable, so everything saves locally and syncs to the cloud in the background when the connection is restored.
+
+The impact has been meaningful — vendors who tested it reported cutting their quotation time from 15+ minutes down to under 60 seconds, and customers responded better to receiving a proper PDF versus a WhatsApp text. It also gave vendors a simple CRM-like view of their leads and quote status, which most of them never had before.
+
+---
+
+Question 2: Tools & Technologies Used?
+
+Here's the stack I worked with across the AI and product layers:
+
+LLMs & AI:
+- Google Gemini 2.5 Flash — used for natural language understanding, structured data extraction from free-form text and voice, multilingual support (English, Hindi, Hinglish), and catalogue extraction from images/files
+- Google Generative AI SDK — for integrating Gemini into the backend orchestration layer
+
+Backend & Orchestration:
+- Node.js with Express — AI orchestration proxy that sits between the mobile app and the Gemini API, handling prompt construction, response parsing, and validation
+- Zod — schema validation for structured AI outputs to ensure reliability
+
+Database & Storage:
+- Supabase (PostgreSQL) — primary cloud database, authentication, and file storage
+- AsyncStorage — local persistence for offline-first functionality
+- Custom FIFO sync queue with mutex-based background sync — to handle offline-to-cloud synchronization reliably
+
+Mobile Frontend:
+- React Native with Expo (SDK 54+) and TypeScript
+- Expo Router for navigation
+- React Context for state management
+- expo-print for HTML-to-PDF generation
+- expo-sharing for native file sharing
+- expo-av for audio recording (voice input)
+
+Infrastructure & Tooling:
+- pnpm monorepo — shared libraries for API clients and database schemas across mobile and backend
+- Supabase Auth — OTP-based authentication
