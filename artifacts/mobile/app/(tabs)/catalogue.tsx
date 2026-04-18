@@ -402,10 +402,21 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
                     keyboardType="number-pad"
                     maxLength={8}
                   />
+                  {!hsnCode.trim() && (
+                    <Text style={{ color: colors.mutedForeground, fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 4 }}>
+                      Providing an HSN code will require a tax rate (GST %).
+                    </Text>
+                  )}
                 </View>
                 {!!hsnCode.trim() && (
                   <View style={styles.formGroup}>
-                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Tax Rate (%)</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                      <Text style={[styles.label, { color: colors.mutedForeground, marginBottom: 0 }]}>Tax Rate (%)</Text>
+                      <Text style={{ color: colors.destructive, fontSize: 13, fontFamily: "Inter_600SemiBold" }}>*</Text>
+                      <View style={[styles.optionalBadge, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "40" }]}>
+                        <Text style={{ color: colors.destructive, fontSize: 11, fontFamily: "Inter_600SemiBold" }}>required</Text>
+                      </View>
+                    </View>
                     <TextInput
                       style={[
                         styles.input,
