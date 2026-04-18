@@ -869,8 +869,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
     marginTop: 8,
-    boxShadow: "0px 4px 10px rgba(55, 48, 163, 0.25)",
-    elevation: 4,
   },
   createQuoteBtnText: {
     fontSize: 16,

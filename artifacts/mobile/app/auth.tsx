@@ -287,10 +287,6 @@ const styles = StyleSheet.create({
   backLink: { fontSize: 14, fontFamily: "Inter_500Medium" },
   button: {
     borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    boxShadow: "0px 6px 14px rgba(79, 70, 229, 0.35)",
-    elevation: 5,
   },
   buttonText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
   resendRow: { alignItems: "center" },

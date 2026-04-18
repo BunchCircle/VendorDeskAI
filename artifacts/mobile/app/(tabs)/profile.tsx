@@ -403,8 +403,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
-    boxShadow: "0px 6px 12px rgba(79, 70, 229, 0.3)",
-    elevation: 5,
   },
   savedBtn: {
     borderRadius: 14,

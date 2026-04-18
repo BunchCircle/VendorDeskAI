@@ -639,8 +639,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     marginBottom: 4,
-    boxShadow: "0px 4px 10px rgba(55, 48, 163, 0.25)",
-    elevation: 4,
   },
   createPdfText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },

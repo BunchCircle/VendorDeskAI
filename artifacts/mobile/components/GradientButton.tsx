@@ -139,8 +139,8 @@ export function GradientButton({
 const styles = StyleSheet.create({
   gradientWrapper: {
     alignSelf: "stretch",
+    borderRadius: 14,
     boxShadow: "0px 4px 12px rgba(79, 70, 229, 0.3)",
-    elevation: 4,
   },
   gradientInner: {
     overflow: "hidden",

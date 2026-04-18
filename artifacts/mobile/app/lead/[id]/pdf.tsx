@@ -436,8 +436,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     marginBottom: 4,
-    boxShadow: "0px 4px 10px rgba(37, 211, 102, 0.3)",
-    elevation: 4,
   },
   whatsappBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
 });
