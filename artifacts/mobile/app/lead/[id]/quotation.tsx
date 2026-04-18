@@ -863,10 +863,8 @@ const styles = StyleSheet.create({
   },
   createQuoteBtn: {
     flexDirection: "row",
-    alignItems: "center",
     gap: 10,
     paddingHorizontal: 32,
-    paddingVertical: 16,
     borderRadius: 16,
     marginTop: 8,
   },

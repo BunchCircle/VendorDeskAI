@@ -401,8 +401,6 @@ const styles = StyleSheet.create({
   saveBtnWrap: { marginHorizontal: 16 },
   saveBtn: {
     borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
   },
   savedBtn: {
     borderRadius: 14,

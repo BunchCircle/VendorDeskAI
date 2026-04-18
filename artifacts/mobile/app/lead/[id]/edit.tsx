@@ -301,8 +301,6 @@ const styles = StyleSheet.create({
   checkboxLabel: { fontSize: 14, fontFamily: "Inter_400Regular", flex: 1, lineHeight: 20 },
   saveBtn: {
     borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
   },
   saveBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
 });

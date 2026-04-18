@@ -633,11 +633,9 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1 },
   createPdfBtn: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "center",
     gap: 10,
     borderRadius: 14,
-    paddingVertical: 16,
     marginBottom: 4,
   },
   createPdfText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
