@@ -90,7 +90,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
               backgroundColor: colors.primary,
               opacity: pressed ? 0.9 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
-              shadowColor: colors.primary,
+              boxShadow: `0px 4px 10px ${colors.primary}40`,
             },
           ]}
         >
@@ -232,9 +232,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 28,
     minWidth: 180,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
     elevation: 4,
   },
   buttonText: {

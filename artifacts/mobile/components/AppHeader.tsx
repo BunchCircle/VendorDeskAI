@@ -159,10 +159,7 @@ const styles = StyleSheet.create({
   logoMark: {
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    boxShadow: "0px 2px 6px rgba(79, 70, 229, 0.3)",
     elevation: 3,
   },
   logoMarkText: {

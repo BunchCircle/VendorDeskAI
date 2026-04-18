@@ -20,7 +20,7 @@ import { GradientButton } from "@/components/GradientButton";
 import { Icon } from "@/components/Icon";
 import { AppHeader } from "@/components/AppHeader";
 import * as Haptics from "expo-haptics";
-import { Audio } from "expo-av";
+import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -99,7 +99,7 @@ export default function QuotationWorkspaceScreen() {
   const [recordingSecs, setRecordingSecs] = useState(0);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const webRecognitionRef = useRef<any>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const MAX_RECORD_SECS = 30;
@@ -116,7 +116,7 @@ export default function QuotationWorkspaceScreen() {
   // Cleanup recording on unmount
   useEffect(() => {
     return () => {
-      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      audioRecorder.stop().catch(() => {});
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
     };
   }, []);
@@ -198,7 +198,7 @@ export default function QuotationWorkspaceScreen() {
       return;
     }
 
-    // ── Path 3: Expo Go Android — expo-av record → Gemini transcription ──────
+    // ── Path 3: Expo Go Android — expo-audio record → Gemini transcription ───
     if (isListening) {
       // Stop the countdown timer
       if (recordingTimerRef.current) {
@@ -207,14 +207,11 @@ export default function QuotationWorkspaceScreen() {
       }
       // Stop recording and send for transcription
       try {
-        const recording = recordingRef.current;
-        if (!recording) { setIsListening(false); return; }
         setIsListening(false);
         setRecordingSecs(0);
-        await recording.stopAndUnloadAsync();
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-        const uri = recording.getURI();
-        recordingRef.current = null;
+        await audioRecorder.stop();
+        await AudioModule.setAudioModeAsync({ allowsRecording: false });
+        const uri = audioRecorder.uri;
         if (!uri) {
           addMessage({ role: "assistant", content: "Could not capture audio. Please try again." });
           return;
@@ -234,7 +231,6 @@ export default function QuotationWorkspaceScreen() {
         setIsListening(false);
         setIsTranscribing(false);
         setRecordingSecs(0);
-        recordingRef.current = null;
         if (recordingTimerRef.current) {
           clearInterval(recordingTimerRef.current);
           recordingTimerRef.current = null;
@@ -246,16 +242,14 @@ export default function QuotationWorkspaceScreen() {
 
     // Start recording
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
       if (!granted) {
         addMessage({ role: "assistant", content: "Microphone permission is needed for voice input. Please allow it in Settings." });
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-      recordingRef.current = recording;
+      await AudioModule.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setRecordingSecs(0);
       setIsListening(true);
 
@@ -330,8 +324,7 @@ export default function QuotationWorkspaceScreen() {
         webRecognitionRef.current?.stop();
       } else {
         // Expo Go: discard the recording, user explicitly typed
-        recordingRef.current?.stopAndUnloadAsync().catch(() => {});
-        recordingRef.current = null;
+        audioRecorder.stop().catch(() => {});
       }
       setIsListening(false);
     }
@@ -757,10 +750,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 12,
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    boxShadow: "0px 3px 8px rgba(79, 70, 229, 0.25)",
     elevation: 3,
     overflow: "hidden",
   },
@@ -840,10 +830,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    boxShadow: "0px 2px 8px rgba(79, 70, 229, 0.3)",
     elevation: 3,
     overflow: "hidden",
   },
@@ -882,6 +869,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
     marginTop: 8,
+    boxShadow: "0px 4px 10px rgba(55, 48, 163, 0.25)",
+    elevation: 4,
   },
   createQuoteBtnText: {
     fontSize: 16,
@@ -898,10 +887,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
+    boxShadow: "0px -4px 16px rgba(0, 0, 0, 0.12)",
     elevation: 8,
   },
   modalHeader: {

@@ -139,10 +139,7 @@ export function GradientButton({
 const styles = StyleSheet.create({
   gradientWrapper: {
     alignSelf: "stretch",
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    boxShadow: "0px 4px 12px rgba(79, 70, 229, 0.3)",
     elevation: 4,
   },
   gradientInner: {

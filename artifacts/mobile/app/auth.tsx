@@ -114,8 +114,7 @@ export default function AuthScreen() {
         colors={["#4F46E5", "#6D28D9", colors.background]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.55 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]}
       />
 
       <KeyboardAvoidingView
@@ -236,10 +235,7 @@ const styles = StyleSheet.create({
   container: { paddingHorizontal: 20, gap: 24, alignItems: "stretch" },
   headerSection: { alignItems: "center", gap: 16 },
   logoWrap: {
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
+    boxShadow: "0px 8px 20px rgba(79, 70, 229, 0.4)",
     elevation: 8,
   },
   appName: {
@@ -261,10 +257,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 24,
     gap: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
+    boxShadow: "0px 8px 24px rgba(0, 0, 0, 0.1)",
     elevation: 6,
   },
   stepHeader: { gap: 6 },
@@ -292,7 +285,13 @@ const styles = StyleSheet.create({
     minWidth: 36,
   },
   backLink: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  button: {},
+  button: {
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    boxShadow: "0px 6px 14px rgba(79, 70, 229, 0.35)",
+    elevation: 5,
+  },
   buttonText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
   resendRow: { alignItems: "center" },
   resend: { textAlign: "center", fontSize: 14, fontFamily: "Inter_400Regular" },
