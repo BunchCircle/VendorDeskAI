@@ -84,14 +84,21 @@ export function GradientButton({
         onPress={onPress}
         disabled={isDisabled}
         activeOpacity={0.85}
-        style={[style, { opacity: isDisabled ? 0.6 : 1 }]}
+        style={[
+          styles.gradientWrapper,
+          {
+            borderRadius: sizeStyles.borderRadius,
+            opacity: isDisabled ? 0.6 : 1,
+          },
+          style,
+        ]}
       >
         <LinearGradient
           colors={isDisabled ? ["#94A3B8", "#94A3B8"] : gradColors}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[
-            styles.btn,
+            styles.gradientInner,
             {
               paddingVertical: sizeStyles.paddingVertical,
               paddingHorizontal: sizeStyles.paddingHorizontal,
@@ -130,12 +137,18 @@ export function GradientButton({
 }
 
 const styles = StyleSheet.create({
-  btn: {
+  gradientWrapper: {
+    alignSelf: "stretch",
     shadowColor: "#4F46E5",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 4,
+  },
+  gradientInner: {
+    overflow: "hidden",
+  },
+  btn: {
     overflow: "hidden",
   },
   inner: {

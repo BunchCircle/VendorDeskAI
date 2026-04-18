@@ -882,11 +882,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
     marginTop: 8,
-    shadowColor: "#3730A3",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 4,
   },
   createQuoteBtnText: {
     fontSize: 16,
