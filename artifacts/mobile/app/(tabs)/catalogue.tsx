@@ -61,7 +61,9 @@ function ProductCard({
         </View>
         {!!product.hsnCode && (
           <Text style={{ color: colors.mutedForeground, fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-            HSN: {product.hsnCode}
+            {product.taxRate != null
+              ? `HSN: ${product.hsnCode}  ·  GST: ${product.taxRate}%`
+              : `HSN: ${product.hsnCode}`}
           </Text>
         )}
       </View>
@@ -89,6 +91,8 @@ interface ExtractedProduct {
   name: string;
   price: number;
   unit: string;
+  hsnCode?: string;
+  taxRate?: number;
 }
 
 interface AddProductModalProps {
@@ -106,11 +110,14 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
   const [price, setPrice] = useState(editProduct?.price?.toString() || "");
   const [unit, setUnit] = useState(editProduct?.unit || "");
   const [hsnCode, setHsnCode] = useState(editProduct?.hsnCode || "");
+  const [taxRate, setTaxRate] = useState(editProduct?.taxRate?.toString() || "");
+  const [taxRateError, setTaxRateError] = useState("");
 
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedProduct[]>([]);
+  const [expandedRows, setExpandedRows] = useState<number[]>([]);
 
   React.useEffect(() => {
     if (editProduct) {
@@ -118,16 +125,20 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
       setPrice(editProduct.price.toString());
       setUnit(editProduct.unit);
       setHsnCode(editProduct.hsnCode || "");
+      setTaxRate(editProduct.taxRate?.toString() || "");
       setMode("manual");
     } else {
       setName("");
       setPrice("");
       setUnit("");
       setHsnCode("");
+      setTaxRate("");
     }
+    setTaxRateError("");
     setSelectedImageUri(null);
     setSelectedFileName(null);
     setExtracted([]);
+    setExpandedRows([]);
   }, [editProduct, visible]);
 
   React.useEffect(() => {
@@ -149,8 +160,26 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
       Alert.alert("Invalid Price", "Please enter a valid price.");
       return;
     }
+    const hsnTrimmed = hsnCode.trim();
+    if (hsnTrimmed) {
+      const taxRateNum = parseFloat(taxRate);
+      if (!taxRate.trim() || isNaN(taxRateNum) || taxRateNum < 0) {
+        setTaxRateError("Tax rate is required when HSN code is provided.");
+        return;
+      }
+    }
+    setTaxRateError("");
+    const hsnTrimmedFinal = hsnCode.trim();
+    const taxRateNum = hsnTrimmedFinal ? parseFloat(taxRate) : NaN;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSave({ id: editProduct?.id, name: name.trim(), price: priceNum, unit: unit.trim(), hsnCode: hsnCode.trim() || undefined });
+    onSave({
+      id: editProduct?.id,
+      name: name.trim(),
+      price: priceNum,
+      unit: unit.trim(),
+      hsnCode: hsnTrimmedFinal || undefined,
+      taxRate: hsnTrimmedFinal && !isNaN(taxRateNum) ? taxRateNum : undefined,
+    });
     onClose();
   };
 
@@ -230,8 +259,23 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
     }
   };
 
+  const updateExtractedRow = (index: number, updates: Partial<ExtractedProduct>) => {
+    setExtracted((prev) => prev.map((item, i) => i === index ? { ...item, ...updates } : item));
+  };
+
+  const toggleExpandedRow = (index: number) => {
+    setExpandedRows((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+    );
+  };
+
+  const extractedBlockingRows = extracted.filter(
+    (p) => p.hsnCode?.trim() && (p.taxRate == null || isNaN(p.taxRate) || p.taxRate < 0)
+  );
+  const extractedCanAdd = extracted.length > 0 && extractedBlockingRows.length === 0;
+
   const handleAddExtracted = () => {
-    if (extracted.length === 0) return;
+    if (!extractedCanAdd) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onAddMany(extracted);
     onClose();
@@ -354,11 +398,36 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
                     placeholder="e.g. 1006 (rice)"
                     placeholderTextColor={colors.mutedForeground}
                     value={hsnCode}
-                    onChangeText={setHsnCode}
+                    onChangeText={(v) => { setHsnCode(v); if (!v.trim()) { setTaxRate(""); setTaxRateError(""); } else { setTaxRateError(""); } }}
                     keyboardType="number-pad"
                     maxLength={8}
                   />
                 </View>
+                {!!hsnCode.trim() && (
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Tax Rate (%)</Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: colors.muted,
+                          borderColor: taxRateError ? colors.destructive : colors.border,
+                          color: colors.foreground,
+                        },
+                      ]}
+                      placeholder="e.g. 5"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={taxRate}
+                      onChangeText={(v) => { setTaxRate(v); if (v.trim()) setTaxRateError(""); }}
+                      keyboardType="decimal-pad"
+                    />
+                    {!!taxRateError && (
+                      <Text style={{ color: colors.destructive, fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 4 }}>
+                        {taxRateError}
+                      </Text>
+                    )}
+                  </View>
+                )}
                 <TouchableOpacity onPress={handleSave} activeOpacity={0.85}>
                   <LinearGradient
                     colors={["#4F46E5", "#6D28D9"]}
@@ -440,19 +509,78 @@ function AddProductModal({ visible, editProduct, onClose, onSave, onAddMany, col
                         {extracted.length} product{extracted.length !== 1 ? "s" : ""} found
                       </Text>
                     </View>
-                    {extracted.map((p, i) => (
-                      <View key={i} style={[styles.extractedRow, { borderBottomColor: colors.border }]}>
-                        <Text style={[styles.extractedName, { color: colors.foreground }]} numberOfLines={1}>
-                          {p.name}
-                        </Text>
-                        <Text style={[styles.extractedPrice, { color: colors.primary }]}>
-                          ₹{p.price} / {p.unit}
+                    {extracted.map((p, i) => {
+                      const isExpanded = expandedRows.includes(i);
+                      const hasHsn = !!p.hsnCode?.trim();
+                      const taxRateInvalid = hasHsn && (p.taxRate == null || isNaN(p.taxRate) || p.taxRate < 0);
+                      return (
+                        <View key={i} style={[styles.extractedRow, { borderBottomColor: colors.border, flexDirection: "column", alignItems: "stretch", paddingBottom: isExpanded ? 12 : 10 }]}>
+                          <TouchableOpacity
+                            style={{ flexDirection: "row", alignItems: "center" }}
+                            onPress={() => toggleExpandedRow(i)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.extractedName, { color: colors.foreground }]} numberOfLines={1}>
+                              {p.name}
+                            </Text>
+                            <Text style={[styles.extractedPrice, { color: colors.primary, marginRight: 8 }]}>
+                              ₹{p.price} / {p.unit}
+                            </Text>
+                            {taxRateInvalid && (
+                              <View style={{ marginRight: 4 }}>
+                                <Icon name="alert-circle" size={14} color={colors.destructive} />
+                              </View>
+                            )}
+                            <Icon name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.mutedForeground} />
+                          </TouchableOpacity>
+                          {isExpanded && (
+                            <View style={{ marginTop: 10, gap: 8 }}>
+                              <View>
+                                <Text style={[styles.label, { color: colors.mutedForeground }]}>HSN Code <Text style={{ fontFamily: "Inter_400Regular", textTransform: "none" }}>(optional)</Text></Text>
+                                <TextInput
+                                  style={[styles.input, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground, paddingVertical: 9 }]}
+                                  placeholder="e.g. 1006"
+                                  placeholderTextColor={colors.mutedForeground}
+                                  value={p.hsnCode || ""}
+                                  onChangeText={(v) => updateExtractedRow(i, { hsnCode: v, taxRate: v.trim() ? p.taxRate : undefined })}
+                                  keyboardType="number-pad"
+                                  maxLength={8}
+                                />
+                              </View>
+                              {hasHsn && (
+                                <View>
+                                  <Text style={[styles.label, { color: colors.mutedForeground }]}>Tax Rate (%)</Text>
+                                  <TextInput
+                                    style={[styles.input, { backgroundColor: colors.muted, borderColor: taxRateInvalid ? colors.destructive : colors.border, color: colors.foreground, paddingVertical: 9 }]}
+                                    placeholder="e.g. 5"
+                                    placeholderTextColor={colors.mutedForeground}
+                                    value={p.taxRate != null ? p.taxRate.toString() : ""}
+                                    onChangeText={(v) => updateExtractedRow(i, { taxRate: v.trim() ? parseFloat(v) : undefined })}
+                                    keyboardType="decimal-pad"
+                                  />
+                                  {taxRateInvalid && (
+                                    <Text style={{ color: colors.destructive, fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 3 }}>
+                                      Tax rate is required when HSN code is provided.
+                                    </Text>
+                                  )}
+                                </View>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                    {extractedBlockingRows.length > 0 && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: 2 }}>
+                        <Icon name="alert-circle" size={14} color={colors.destructive} />
+                        <Text style={{ color: colors.destructive, fontSize: 12, fontFamily: "Inter_400Regular", flex: 1 }}>
+                          {extractedBlockingRows.length} product{extractedBlockingRows.length !== 1 ? "s have" : " has"} an HSN code but no tax rate. Please fill in the tax rate to continue.
                         </Text>
                       </View>
-                    ))}
-                    <TouchableOpacity onPress={handleAddExtracted} activeOpacity={0.85} style={{ marginTop: 16 }}>
+                    )}
+                    <TouchableOpacity onPress={handleAddExtracted} activeOpacity={extractedCanAdd ? 0.85 : 1} disabled={!extractedCanAdd} style={{ marginTop: 16 }}>
                       <LinearGradient
-                        colors={["#4F46E5", "#6D28D9"]}
+                        colors={extractedCanAdd ? ["#4F46E5", "#6D28D9"] : ["#9CA3AF", "#9CA3AF"]}
                         style={styles.saveBtn}
                       >
                         <Icon name="plus" size={18} color="#fff" />
@@ -489,12 +617,12 @@ export default function CatalogueScreen() {
     if (product.id) {
       updateProduct(product as Product);
     } else {
-      addProduct({ name: product.name, price: product.price, unit: product.unit, hsnCode: product.hsnCode });
+      addProduct({ name: product.name, price: product.price, unit: product.unit, hsnCode: product.hsnCode, taxRate: product.taxRate });
     }
   };
 
-  const handleAddMany = (list: Array<{ name: string; price: number; unit: string }>) => {
-    list.forEach((p) => addProduct({ name: p.name, price: p.price, unit: p.unit }));
+  const handleAddMany = (list: ExtractedProduct[]) => {
+    list.forEach((p) => addProduct({ name: p.name, price: p.price, unit: p.unit, hsnCode: p.hsnCode || undefined, taxRate: p.taxRate }));
   };
 
   const handleDelete = (product: Product) => {

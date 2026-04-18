@@ -29,6 +29,8 @@ create table if not exists public.products (
   name text not null,
   price numeric not null,
   unit text not null,
+  hsn_code text,
+  tax_rate numeric,
   created_at timestamptz not null default now()
 );
 

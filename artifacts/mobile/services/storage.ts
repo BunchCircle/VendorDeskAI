@@ -16,6 +16,7 @@ export interface Product {
   price: number;
   unit: string;
   hsnCode?: string;
+  taxRate?: number;
 }
 
 export interface Lead {
@@ -36,6 +37,7 @@ export interface QuotationItem {
   unit: string;
   rate: number;
   hsnCode?: string;
+  taxRate?: number;
 }
 
 export interface Quotation {

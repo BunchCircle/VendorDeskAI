@@ -73,6 +73,7 @@ export async function getRemoteProducts(): Promise<RemoteResult<Product[]>> {
       price: Number(d.price),
       unit: d.unit,
       hsnCode: d.hsn_code ?? undefined,
+      taxRate: d.tax_rate != null ? Number(d.tax_rate) : undefined,
     })),
   };
 }
@@ -87,6 +88,7 @@ export async function upsertRemoteProduct(product: Product): Promise<void> {
     price: product.price,
     unit: product.unit,
     hsn_code: product.hsnCode ?? null,
+    tax_rate: product.taxRate ?? null,
   });
   if (error) throw new Error(error.message);
 }

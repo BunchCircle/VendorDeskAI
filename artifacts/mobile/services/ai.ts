@@ -86,6 +86,7 @@ export async function parseRequirementWithAI(
           unit: item.unit || "piece",
           rate: item.rate || 0,
           hsnCode: matchedProduct?.hsnCode,
+          taxRate: matchedProduct?.taxRate,
         };
       }
     );
