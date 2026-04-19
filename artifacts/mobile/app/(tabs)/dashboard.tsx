@@ -7,13 +7,15 @@ import {
   Modal,
   Platform,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import * as XLSX from "xlsx";
 import { LinearGradient } from "expo-linear-gradient";
 import { Icon } from "@/components/Icon";
 import { AppHeader } from "@/components/AppHeader";
@@ -151,7 +153,7 @@ function inRange(dateStr: string, range: DateRange): boolean {
   return true;
 }
 
-function buildCSV(
+function buildXlsx(
   invoices: Invoice[],
   leads: { id: string; name: string }[],
   quotationCount: number,
@@ -166,31 +168,35 @@ function buildCSV(
       ? `${range.from ? formatDateInput(range.from) : "All"} – ${range.to ? formatDateInput(range.to) : "All"}`
       : DATE_PRESETS.find((p) => p.value === preset)?.label ?? "All Time";
 
-  const summaryRows = [
+  const summaryData = [
+    ["Metric", "Value"],
     ["Period", periodLabel],
-    ["Total Leads", String(leadCount)],
-    ["Total Quotations", String(quotationCount)],
-    ["Total Invoices", String(invoices.length)],
-    ["Total Products", String(productCount)],
-    ["Total Revenue (INR)", invoices.reduce((s, inv) => s + computeTotal(inv), 0).toFixed(2)],
-    ["Paid (INR)", invoices.filter((i) => i.status === "paid").reduce((s, inv) => s + computeTotal(inv), 0).toFixed(2)],
-    ["Outstanding (INR)", invoices.filter((i) => i.status !== "paid").reduce((s, inv) => s + computeTotal(inv), 0).toFixed(2)],
-    [],
-    ["Invoice No", "Lead", "Invoice Date", "Due Date", "Status", "Total (INR)"],
+    ["Total Leads", leadCount],
+    ["Total Quotations", quotationCount],
+    ["Total Invoices", invoices.length],
+    ["Total Products", productCount],
+    ["Total Revenue (INR)", parseFloat(invoices.reduce((s, inv) => s + computeTotal(inv), 0).toFixed(2))],
+    ["Paid (INR)", parseFloat(invoices.filter((i) => i.status === "paid").reduce((s, inv) => s + computeTotal(inv), 0).toFixed(2))],
+    ["Outstanding (INR)", parseFloat(invoices.filter((i) => i.status !== "paid").reduce((s, inv) => s + computeTotal(inv), 0).toFixed(2))],
   ];
 
-  const invoiceRows = invoices.map((inv) => [
-    inv.invoiceNumber,
-    leadMap[inv.leadId] ?? "Unknown",
-    formatDate(inv.invoiceDate),
-    inv.dueDate ? formatDate(inv.dueDate) : "",
-    inv.status,
-    computeTotal(inv).toFixed(2),
-  ]);
+  const invoiceData = [
+    ["Invoice No", "Lead", "Invoice Date", "Due Date", "Status", "Total (INR)"],
+    ...invoices.map((inv) => [
+      inv.invoiceNumber,
+      leadMap[inv.leadId] ?? "Unknown",
+      formatDate(inv.invoiceDate),
+      inv.dueDate ? formatDate(inv.dueDate) : "",
+      inv.status,
+      parseFloat(computeTotal(inv).toFixed(2)),
+    ]),
+  ];
 
-  return [...summaryRows, ...invoiceRows]
-    .map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
-    .join("\n");
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), "Summary");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(invoiceData), "Invoices");
+
+  return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -513,22 +519,46 @@ export default function DashboardScreen() {
     setShowCustomModal(false);
   };
 
-  const handleExport = () => {
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (filteredInvoices.length === 0 && filteredLeads.length === 0) {
       Alert.alert("Nothing to Export", "No data found for the selected period.");
       return;
     }
-    const csv = buildCSV(
-      filteredInvoices,
-      leads,
-      filteredQuotations.length,
-      filteredLeads.length,
-      products.length,
-      dateRange,
-      preset
-    );
-    Share.share({ title: "Dashboard Export", message: csv });
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const base64 = buildXlsx(
+        filteredInvoices,
+        leads,
+        filteredQuotations.length,
+        filteredLeads.length,
+        products.length,
+        dateRange,
+        preset
+      );
+      const fileName = `dashboard-export-${Date.now()}.xlsx`;
+      const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          dialogTitle: "Save or Share Dashboard Export",
+          UTI: "com.microsoft.excel.xlsx",
+        });
+      } else {
+        Alert.alert("Sharing unavailable", "Your device does not support file sharing.");
+      }
+    } catch {
+      Alert.alert("Export Failed", "Could not generate the Excel file. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleInvoicePress = (invoice: Invoice) => {
@@ -729,10 +759,11 @@ export default function DashboardScreen() {
         rightElement={
           <TouchableOpacity
             onPress={handleExport}
-            style={[styles.exportBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            accessibilityLabel="Export dashboard data as CSV"
+            disabled={exporting}
+            style={[styles.exportBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: exporting ? 0.5 : 1 }]}
+            accessibilityLabel="Export dashboard data as Excel"
           >
-            <Icon name="download" size={16} color={colors.primary} />
+            <Icon name={exporting ? "refresh-cw" : "download"} size={16} color={colors.primary} />
           </TouchableOpacity>
         }
       />
