@@ -76,9 +76,22 @@ export async function parseRequirementWithAI(
 
     const quotationItems: QuotationItem[] = (parsed.matched || []).map(
       (item) => {
-        const matchedProduct = catalogue.find(
-          (p) => p.name.toLowerCase() === item.name.toLowerCase()
-        );
+        const itemNameLower = item.name.toLowerCase().trim();
+        const matchedProduct =
+          catalogue.find(
+            (p) => p.name.toLowerCase().trim() === itemNameLower
+          ) ||
+          catalogue.find(
+            (p) =>
+              p.name.toLowerCase().trim().includes(itemNameLower) ||
+              itemNameLower.includes(p.name.toLowerCase().trim())
+          ) ||
+          catalogue.find((p) =>
+            p.name
+              .toLowerCase()
+              .trim()
+              .startsWith(itemNameLower.slice(0, Math.max(4, itemNameLower.length - 3)))
+          );
         return {
           id: generateId(),
           name: item.name,

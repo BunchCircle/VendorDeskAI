@@ -46,7 +46,7 @@ export default function QuotationPreviewScreen() {
 
   const [taxEnabled, setTaxEnabled] = useState(existingQuotation?.tax?.enabled ?? false);
   const [taxLabel, setTaxLabel] = useState(existingQuotation?.tax?.label ?? "GST");
-  const [taxRate, setTaxRate] = useState(existingQuotation?.tax?.rate?.toString() ?? "18");
+  const [taxRate, setTaxRate] = useState(existingQuotation?.tax?.rate?.toString() ?? "");
 
   useEffect(() => {
     if (existingQuotation) {
@@ -85,10 +85,10 @@ export default function QuotationPreviewScreen() {
   const grandTotal = afterDiscount + taxAmount;
 
   const deriveDefaultTaxRate = (currentItems: QuotationItem[]): string => {
-    const rates = currentItems
-      .map((item) => item.taxRate)
-      .filter((r): r is number => r !== undefined);
-    if (rates.length === 0) return "";
+    if (currentItems.length === 0) return "";
+    const allHaveRate = currentItems.every((item) => item.taxRate !== undefined);
+    if (!allHaveRate) return "";
+    const rates = currentItems.map((item) => item.taxRate as number);
     const allSame = rates.every((r) => r === rates[0]);
     return allSame ? rates[0].toString() : "";
   };

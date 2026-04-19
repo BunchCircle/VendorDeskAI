@@ -54,9 +54,10 @@ export function generateQuotationHTML(
     ? `<div class="total-row"><span class="total-label">Discount (${quotation.discount.type === "percent" ? `${quotation.discount.value}%` : "flat"})</span><span class="total-amount" style="color:#E53935">-${formatCurrency(discountAmount)}</span></div>`
     : "";
 
-  const taxRow = quotation.tax?.enabled && taxAmount > 0
+  const noTax = !quotation.tax?.enabled || !quotation.tax.rate || quotation.tax.rate <= 0;
+  const taxRow = !noTax
     ? `<div class="total-row"><span class="total-label">${quotation.tax.label || "Tax"} (${quotation.tax.rate}%)</span><span class="total-amount">+${formatCurrency(taxAmount)}</span></div>`
-    : "";
+    : `<div class="total-row"><span class="total-label" style="font-style:italic;color:#B0BEC5">Quotation without Taxes</span></div>`;
 
   return `<!DOCTYPE html>
 <html>

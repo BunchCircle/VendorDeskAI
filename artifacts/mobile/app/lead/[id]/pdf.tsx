@@ -265,12 +265,16 @@ export default function PDFViewerScreen() {
                   colors={colors}
                 />
               )}
-              {quotation.tax?.enabled && taxAmount > 0 && (
+              {quotation.tax?.enabled && quotation.tax.rate > 0 ? (
                 <SummaryRow
                   label={`${quotation.tax.label || "Tax"} (${quotation.tax.rate}%)`}
                   value={`+₹${taxAmount.toLocaleString("en-IN")}`}
                   colors={colors}
                 />
+              ) : (
+                <Text style={[styles.noTaxNote, { color: colors.mutedForeground }]}>
+                  Quotation without Taxes
+                </Text>
               )}
             </View>
             <LinearGradient
@@ -396,6 +400,7 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: "row", justifyContent: "space-between" },
   summaryLabel: { fontSize: 13, fontFamily: "Inter_400Regular" },
   summaryValue: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  noTaxNote: { fontSize: 12, fontFamily: "Inter_400Regular", fontStyle: "italic" },
   totalBox: {
     flexDirection: "row",
     justifyContent: "space-between",
