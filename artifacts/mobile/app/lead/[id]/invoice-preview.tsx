@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Platform,
@@ -224,7 +225,8 @@ export default function InvoicePreviewScreen() {
   if (invoiceId && !existingInvoice) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }]}>
-        <Text style={{ color: colors.mutedForeground }}>Loading invoice…</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ color: colors.mutedForeground, marginTop: 12, fontSize: 14 }}>Loading invoice…</Text>
       </View>
     );
   }
