@@ -74,14 +74,18 @@ export default function InvoicePreviewScreen() {
   const [taxEnabled, setTaxEnabled] = useState(existingInvoice?.tax?.enabled ?? false);
   const [taxRate, setTaxRate] = useState(existingInvoice?.tax?.rate?.toString() ?? "18");
 
-  const [isGeneratingNumber, setIsGeneratingNumber] = useState(!existingInvoice);
+  // Only a brand-new invoice (no invoiceId param) needs a generated number.
+  const [isGeneratingNumber, setIsGeneratingNumber] = useState(!invoiceId && !existingInvoice);
 
   // Per-item GST from catalogue (overrides the manual toggle when items have taxRate)
   const perItemTaxData = useMemo(() => computePerItemTaxData(items), [items]);
   const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
 
   useEffect(() => {
-    if (!existingInvoice) {
+    // Only generate a new number when this is a brand-new invoice (no invoiceId param).
+    // When invoiceId is present we are viewing/editing an existing invoice; the rehydration
+    // effect below will populate the number once the context delivers the invoice.
+    if (!invoiceId && !existingInvoice) {
       generateInvoiceNumber().then((num) => {
         setInvoiceNumber(num);
         setIsGeneratingNumber(false);
@@ -210,6 +214,17 @@ export default function InvoicePreviewScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }]}>
         <Text style={{ color: colors.mutedForeground }}>Lead not found</Text>
+      </View>
+    );
+  }
+
+  // When an invoiceId is provided (e.g. just after converting a quotation) but the invoice
+  // hasn't yet appeared in the app context, show a brief loading state rather than rendering
+  // the form with wrong defaults (taxEnabled = false → incorrect grand total).
+  if (invoiceId && !existingInvoice) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: colors.mutedForeground }}>Loading invoice…</Text>
       </View>
     );
   }
