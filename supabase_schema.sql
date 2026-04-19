@@ -42,6 +42,7 @@ create table if not exists products (
   price      numeric(12, 2) not null,
   unit       text        not null,
   hsn_code   text,                              -- optional HSN code (4–8 digits)
+  tax_rate   numeric,                           -- optional per-product tax rate (%)
   created_at timestamptz not null default now()
 );
 
@@ -151,6 +152,7 @@ create policy "Users manage their own quotations"
 alter table vendor_profiles add column if not exists gst_number  text;
 alter table vendor_profiles add column if not exists updated_at  timestamptz not null default now();
 alter table products        add column if not exists hsn_code    text;
+alter table products        add column if not exists tax_rate    numeric;
 
 
 -- =============================================================================
