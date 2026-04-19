@@ -13,14 +13,20 @@ import {
   Lead,
   Product,
   Quotation,
+  Invoice,
+  InvoiceStatus,
   VendorProfile,
   generateId,
   getLeads,
   getProducts,
   getQuotations,
+  getInvoices,
   getVendorProfile,
   saveVendorProfile,
   saveProducts,
+  saveInvoice as storageSaveInvoice,
+  updateInvoiceStatus as storageUpdateInvoiceStatus,
+  deleteInvoice as storageDeleteInvoice,
   addLead as storageAddLead,
   addProduct as storageAddProduct,
   deleteLead as storageDeleteLead,
@@ -56,6 +62,7 @@ async function clearLocalCache(): Promise<void> {
     "products",
     "leads",
     "quotations",
+    "invoices",
     "is_onboarded",
     ACTIVE_USER_KEY,
   ]);
@@ -71,6 +78,7 @@ interface AppContextType {
   products: Product[];
   leads: Lead[];
   quotations: Quotation[];
+  invoices: Invoice[];
   saveProfile: (profile: VendorProfile) => Promise<void>;
   addProduct: (product: Omit<Product, "id">) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
@@ -80,6 +88,10 @@ interface AppContextType {
   deleteLead: (id: string) => Promise<void>;
   saveQuotation: (quotation: Quotation) => Promise<void>;
   getQuotationForLead: (leadId: string) => Quotation | undefined;
+  saveInvoice: (invoice: Invoice) => Promise<void>;
+  updateInvoiceStatus: (id: string, status: InvoiceStatus) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
+  getInvoicesForLead: (leadId: string) => Invoice[];
   refreshAll: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -96,6 +108,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   const lastUserIdRef = useRef<string | null>(null);
   const isFlushing = useRef(false);
@@ -107,20 +120,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setProducts([]);
     setLeads([]);
     setQuotations([]);
+    setInvoices([]);
   }, []);
 
   const loadFromCache = useCallback(async () => {
-    const [profile, prods, ldList, quots] = await Promise.all([
+    const [profile, prods, ldList, quots, invs] = await Promise.all([
       getVendorProfile(),
       getProducts(),
       getLeads(),
       getQuotations(),
+      getInvoices(),
     ]);
     setVendorProfile(profile);
     setOnboarded(!!profile);
     setProducts(prods);
     setLeads(ldList);
     setQuotations(quots);
+    setInvoices(invs);
   }, []);
 
   const syncFromSupabase = useCallback(async () => {
@@ -159,11 +175,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /**
-   * Flush the pending queue for `userId` if not already flushing.
-   * Stops at first failure to preserve strict operation ordering.
-   * Schedules a retry in 30 s if the queue remains non-empty and device is online.
-   */
   const tryFlushQueue = useCallback(async (userId: string) => {
     if (isFlushing.current) return;
     const pending = await getQueueLength(userId);
@@ -219,16 +230,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       lastUserIdRef.current = newUserId;
       await AsyncStorage.setItem(ACTIVE_USER_KEY, newUserId);
 
-      // 1. Load cache instantly so UI is responsive
       await loadFromCache();
 
-      // 2. Flush pending offline writes BEFORE pulling remote data.
-      //    This prevents stale remote data from overwriting local changes.
       if (isOnlineRef.current) {
         await tryFlushQueue(newUserId).catch(() => {});
       }
 
-      // 3. Pull remote data (only after local writes are synced up)
       const syncTimeout = new Promise<void>((resolve) => setTimeout(resolve, 4000));
       await Promise.race([syncFromSupabase(), syncTimeout]);
     };
@@ -244,8 +251,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let initialLoadDone = false;
 
-    // Safety net: if getSession() never resolves (e.g. network issue on
-    // Android / web), fall through to unauthenticated state after 3 seconds.
     const getSessionTimeout = setTimeout(() => {
       if (!initialLoadDone) {
         initialLoadDone = true;
@@ -310,7 +315,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // Initial network check — also triggers flush if queue is pending and online
     NetInfo.fetch().then((state) => {
       const online = state.isConnected === true && state.isInternetReachable !== false;
       isOnlineRef.current = online;
@@ -449,9 +453,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [quotations]
   );
 
+  const saveInvoice = useCallback(async (invoice: Invoice) => {
+    await storageSaveInvoice(invoice);
+    setInvoices((prev) => {
+      const idx = prev.findIndex((inv) => inv.id === invoice.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = invoice;
+        return next;
+      }
+      return [...prev, invoice];
+    });
+  }, []);
+
+  const updateInvoiceStatus = useCallback(async (id: string, status: InvoiceStatus) => {
+    await storageUpdateInvoiceStatus(id, status);
+    setInvoices((prev) =>
+      prev.map((inv) => (inv.id === id ? { ...inv, status } : inv))
+    );
+  }, []);
+
+  const deleteInvoice = useCallback(async (id: string) => {
+    await storageDeleteInvoice(id);
+    setInvoices((prev) => prev.filter((inv) => inv.id !== id));
+  }, []);
+
+  const getInvoicesForLead = useCallback(
+    (leadId: string) => invoices.filter((inv) => inv.leadId === leadId),
+    [invoices]
+  );
+
   const refreshAll = useCallback(async () => {
     const { data: { session: s } } = await supabase.auth.getSession();
     await loadAll(s);
+    const invs = await getInvoices();
+    setInvoices(invs);
   }, [loadAll]);
 
   const logout = useCallback(async () => {
@@ -474,6 +510,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         products,
         leads,
         quotations,
+        invoices,
         saveProfile,
         addProduct,
         updateProduct,
@@ -483,6 +520,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteLead,
         saveQuotation,
         getQuotationForLead,
+        saveInvoice,
+        updateInvoiceStatus,
+        deleteInvoice,
+        getInvoicesForLead,
         refreshAll,
         logout,
       }}

@@ -3,6 +3,7 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Linking,
   Modal,
   Platform,
   RefreshControl,
@@ -24,10 +25,21 @@ import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { Lead } from "@/services/storage";
 
-const STATUS_CONFIG = {
-  Pending: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Pending" },
-  "Quote Created": { bg: "#D1FAE5", text: "#065F46", dot: "#059669", label: "Quote Created" },
-  "PDF Shared": { bg: "#DBEAFE", text: "#1E40AF", dot: "#2563EB", label: "PDF Shared" },
+const STATUS_KEYS: Lead["status"][] = ["Pending", "Quote Created", "PDF Shared"];
+
+const STATUS_CONFIG: Record<Lead["status"], { bg: string; text: string; dot: string; label: string; desc: string }> = {
+  Pending: {
+    bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Pending",
+    desc: "Lead added — no quotation or invoice sent yet.",
+  },
+  "Quote Created": {
+    bg: "#D1FAE5", text: "#065F46", dot: "#059669", label: "Quote Created",
+    desc: "A quotation has been prepared or shared with this lead.",
+  },
+  "PDF Shared": {
+    bg: "#DBEAFE", text: "#1E40AF", dot: "#2563EB", label: "PDF Shared",
+    desc: "The PDF (quote or invoice) has been shared via WhatsApp or download.",
+  },
 };
 
 const DATE_PRESETS = [
@@ -62,12 +74,16 @@ function LeadCard({
   onPress,
   onEdit,
   onDelete,
+  onStatusTap,
+  invoiceCount,
   colors,
 }: {
   lead: Lead;
   onPress: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onStatusTap: () => void;
+  invoiceCount: number;
   colors: ReturnType<typeof useColors>;
 }) {
   const statusCfg = STATUS_CONFIG[lead.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.Pending;
@@ -100,9 +116,25 @@ function LeadCard({
               {lead.whatsappNumber}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusCfg.dot }]} />
-            <Text style={[styles.statusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
+          <View style={{ alignItems: "flex-end", gap: 4 }}>
+            <TouchableOpacity
+              style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}
+              onPress={(e) => { e.stopPropagation?.(); onStatusTap(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+              activeOpacity={0.8}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <View style={[styles.statusDot, { backgroundColor: statusCfg.dot }]} />
+              <Text style={[styles.statusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
+              <Icon name="chevron-down" size={9} color={statusCfg.text} />
+            </TouchableOpacity>
+            {invoiceCount > 0 && (
+              <View style={[styles.invoiceBadge, { backgroundColor: "#EEF2FF" }]}>
+                <Icon name="credit-card" size={10} color="#4338CA" />
+                <Text style={[styles.invoiceBadgeText, { color: "#4338CA" }]}>
+                  {invoiceCount} invoice{invoiceCount !== 1 ? "s" : ""}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
         <Text style={[styles.dateText, { color: colors.mutedForeground }]}>Added {dateStr}</Text>
@@ -123,7 +155,7 @@ function LeadCard({
 }
 
 export default function LeadsScreen() {
-  const { leads, deleteLead, refreshAll } = useApp();
+  const { leads, deleteLead, updateLead, refreshAll, getInvoicesForLead } = useApp();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -133,6 +165,9 @@ export default function LeadsScreen() {
   const [filterVisible, setFilterVisible] = useState(false);
   const [activePreset, setActivePreset] = useState("all");
   const [dateRange, setDateRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+
+  const [statusPickerLead, setStatusPickerLead] = useState<Lead | null>(null);
+  const [infoVisible, setInfoVisible] = useState(false);
 
   const isFiltered = activePreset !== "all";
 
@@ -177,6 +212,13 @@ export default function LeadsScreen() {
         { text: "Delete", style: "destructive", onPress: doDelete },
       ]);
     }
+  };
+
+  const handleStatusChange = async (lead: Lead, newStatus: Lead["status"]) => {
+    setStatusPickerLead(null);
+    if (newStatus === lead.status) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await updateLead({ ...lead, status: newStatus });
   };
 
   const applyPreset = (preset: string) => {
@@ -291,6 +333,8 @@ export default function LeadsScreen() {
             onPress={() => router.push(`/lead/${item.id}/quotation`)}
             onEdit={() => router.push(`/lead/${item.id}/edit`)}
             onDelete={() => handleDelete(item)}
+            onStatusTap={() => setStatusPickerLead(item)}
+            invoiceCount={getInvoicesForLead(item.id).length}
             colors={colors}
           />
         )}
@@ -323,6 +367,7 @@ export default function LeadsScreen() {
         }
       />
 
+      {/* FAB — Add Lead */}
       <TouchableOpacity
         style={[styles.fab, {
           bottom: insets.bottom + (Platform.OS === "web" ? 104 : 80),
@@ -340,6 +385,21 @@ export default function LeadsScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
+      {/* ⓘ Info button — bottom-left corner */}
+      <TouchableOpacity
+        style={[styles.infoBtn, {
+          bottom: insets.bottom + (Platform.OS === "web" ? 108 : 84),
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+        }]}
+        onPress={() => { setInfoVisible(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+        activeOpacity={0.8}
+      >
+        <Icon name="info" size={14} color={colors.mutedForeground} />
+        <Text style={[styles.infoBtnText, { color: colors.mutedForeground }]}>Status Guide</Text>
+      </TouchableOpacity>
+
+      {/* Date Filter Modal */}
       <Modal visible={filterVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
@@ -412,6 +472,86 @@ export default function LeadsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Status Picker Modal */}
+      <Modal visible={!!statusPickerLead} animationType="slide" transparent onRequestClose={() => setStatusPickerLead(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Update Status</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+              {statusPickerLead?.name} — tap a status to change it
+            </Text>
+            <View style={{ gap: 10, marginTop: 20 }}>
+              {STATUS_KEYS.map((s) => {
+                const cfg = STATUS_CONFIG[s];
+                const isCurrent = statusPickerLead?.status === s;
+                return (
+                  <TouchableOpacity
+                    key={s}
+                    style={[
+                      styles.statusOption,
+                      { backgroundColor: cfg.bg, borderColor: isCurrent ? cfg.dot : "transparent", borderWidth: 2 },
+                    ]}
+                    onPress={() => statusPickerLead && handleStatusChange(statusPickerLead, s)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                      <View style={[styles.statusDot, { backgroundColor: cfg.dot, width: 8, height: 8, borderRadius: 4 }]} />
+                      <Text style={[styles.statusOptionLabel, { color: cfg.text }]}>{cfg.label}</Text>
+                    </View>
+                    {isCurrent && <Icon name="check" size={15} color={cfg.dot} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              style={[styles.modalBtn, { marginTop: 16, backgroundColor: colors.muted }]}
+              onPress={() => setStatusPickerLead(null)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.modalBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Info Modal — Status Guide */}
+      <Modal visible={infoVisible} animationType="fade" transparent onRequestClose={() => setInfoVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Icon name="info" size={18} color={colors.primary} />
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>What do the statuses mean?</Text>
+            </View>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground, marginBottom: 16 }]}>
+              Tap the coloured badge on any lead card to change its status.
+            </Text>
+            <View style={{ gap: 12 }}>
+              {STATUS_KEYS.map((s) => {
+                const cfg = STATUS_CONFIG[s];
+                return (
+                  <View key={s} style={[styles.infoRow, { backgroundColor: cfg.bg }]}>
+                    <View style={[styles.statusDot, { backgroundColor: cfg.dot, width: 8, height: 8, borderRadius: 4 }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.statusOptionLabel, { color: cfg.text }]}>{cfg.label}</Text>
+                      <Text style={[styles.infoDesc, { color: cfg.text, opacity: 0.8 }]}>{cfg.desc}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              style={[styles.modalBtn, { marginTop: 20, backgroundColor: colors.muted }]}
+              onPress={() => setInfoVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.modalBtnText, { color: colors.mutedForeground }]}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -454,6 +594,8 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  invoiceBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  invoiceBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
   dateText: { fontSize: 12, fontFamily: "Inter_400Regular" },
   cardActions: { flexDirection: "row", borderTopWidth: 1 },
   cardActionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10 },
@@ -481,6 +623,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  infoBtn: {
+    position: "absolute",
+    left: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    boxShadow: "0px 2px 6px rgba(0,0,0,0.08)",
+    elevation: 3,
+  },
+  infoBtnText: { fontSize: 12, fontFamily: "Inter_500Medium" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
@@ -519,4 +675,20 @@ const styles = StyleSheet.create({
   },
   clearBtn: { paddingHorizontal: 20, borderWidth: 1.5 },
   modalBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  statusOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  statusOptionLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+  },
+  infoDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2, lineHeight: 17 },
 });

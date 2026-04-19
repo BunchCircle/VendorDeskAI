@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   FlatList,
@@ -12,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TextInputProps,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -24,8 +26,6 @@ import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-// expo-speech-recognition: custom native build only (not available in Expo Go).
-// Lazily required so the app never crashes when the native module is absent.
 let ExpoSpeechRecognitionModule: any = null;
 let useSpeechRecognitionEvent: (event: string, callback: (e: any) => void) => void =
   () => {};
@@ -36,56 +36,101 @@ try {
   useSpeechRecognitionEvent = _speech.useSpeechRecognitionEvent;
   _nativeSpeechAvailable = true;
 } catch {
-  // Falls back to expo-av recording on mobile, Web Speech API on web
 }
-// Web Speech API works in all browsers (Expo web preview, Chrome, etc.)
 const _webSpeechAvailable =
   Platform.OS === "web" &&
   typeof window !== "undefined" &&
-  !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  !!((window as Window & typeof globalThis & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+    (window as Window & typeof globalThis & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
 
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { parseRequirementWithAI, transcribeAudio, AIMessage } from "@/services/ai";
-import { generateId, generateQuoteNumber, Lead, QuotationItem } from "@/services/storage";
+import {
+  generateId,
+  generateQuoteNumber,
+  generateInvoiceNumber,
+  Lead,
+  QuotationItem,
+  Invoice,
+  InvoiceStatus,
+  computeTaxSplit,
+  getVendorStateCode,
+} from "@/services/storage";
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  timestamp: number;
   buttons?: Array<{ label: string; action: string; icon?: string }>;
   isLoading?: boolean;
 }
 
-type ButtonStyle = "primary" | "outline" | "whatsapp";
+type ButtonStyleKey = "primary" | "outline" | "whatsapp" | "invoice";
 
-const BUTTON_STYLE_MAP: Record<string, ButtonStyle> = {
+const BUTTON_STYLE_MAP: Record<string, ButtonStyleKey> = {
   view_preview: "primary",
+  view_invoice_preview: "invoice",
   edit_quote: "outline",
   new_quote: "outline",
+  start_quote: "outline",
   send_reminder: "whatsapp",
+  create_invoice: "invoice",
+  start_invoice_chat: "invoice",
+  convert_to_invoice: "invoice",
+  new_invoice: "invoice",
+  view_invoice: "primary",
+  view_quotation: "primary",
 };
+
+const INVOICE_INTENTS = [
+  "invoice", "bill", "billing", "create invoice", "make invoice",
+  "generate invoice", "send invoice", "invoice banao", "invoice chahiye",
+];
+
+function hasInvoiceIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  return INVOICE_INTENTS.some((kw) => lower.includes(kw));
+}
 
 function getActionStyleKey(action: string): string {
   if (action.startsWith("add_unknown:")) return "view_preview";
   return action;
 }
 
+const INVOICE_STATUS_CONFIG: Record<InvoiceStatus, { bg: string; text: string; dot: string; label: string }> = {
+  draft: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Draft" },
+  sent: { bg: "#DBEAFE", text: "#1E40AF", dot: "#2563EB", label: "Sent" },
+  paid: { bg: "#D1FAE5", text: "#065F46", dot: "#059669", label: "Paid" },
+};
+
+const INVOICE_STATUS_ORDER: InvoiceStatus[] = ["draft", "sent", "paid"];
+
 export default function QuotationWorkspaceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { leads, products, addProduct, saveQuotation, updateLead, getQuotationForLead } = useApp();
+  const {
+    leads, products, addProduct, saveQuotation, updateLead,
+    vendorProfile, invoices, saveInvoice,
+    updateInvoiceStatus, quotations,
+  } = useApp();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const lead = leads.find((l) => l.id === id) as Lead | undefined;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [chatStarted, setChatStarted] = useState(false);
+  const [chatMode, setChatMode] = useState<"quotation" | "invoice">("quotation");
   const [quotationItems, setQuotationItems] = useState<QuotationItem[]>([]);
+  const [invoiceItems, setInvoiceItems] = useState<QuotationItem[]>([]);
   const [conversationHistory, setConversationHistory] = useState<AIMessage[]>([]);
   const flatListRef = useRef<FlatList>(null);
+  const [actionMenuVisible, setActionMenuVisible] = useState(false);
+  const [statusMenuFor, setStatusMenuFor] = useState<string | null>(null);
 
   const [addItemModal, setAddItemModal] = useState<{
     visible: boolean;
@@ -100,11 +145,10 @@ export default function QuotationWorkspaceScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const webRecognitionRef = useRef<any>(null);
+  const webRecognitionRef = useRef<{ stop(): void } | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const MAX_RECORD_SECS = 30;
 
-  // Native speech-recognition events (no-op stubs when module is unavailable)
   useSpeechRecognitionEvent("start", () => setIsListening(true));
   useSpeechRecognitionEvent("end", () => setIsListening(false));
   useSpeechRecognitionEvent("result", (event) => {
@@ -113,7 +157,6 @@ export default function QuotationWorkspaceScreen() {
   });
   useSpeechRecognitionEvent("error", () => setIsListening(false));
 
-  // Cleanup recording on unmount
   useEffect(() => {
     return () => {
       audioRecorder.stop().catch(() => {});
@@ -125,18 +168,8 @@ export default function QuotationWorkspaceScreen() {
     if (isListening) {
       pulseLoop.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.35,
-            duration: 600,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 600,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
+          Animated.timing(pulseAnim, { toValue: 1.35, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ])
       );
       pulseLoop.current.start();
@@ -150,7 +183,6 @@ export default function QuotationWorkspaceScreen() {
     if (isTranscribing) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // ── Path 1: Browser / Expo Web — Web Speech API ──────────────────────────
     if (Platform.OS === "web") {
       if (!_webSpeechAvailable) {
         addMessage({ role: "assistant", content: "Voice input is not supported in this browser. Try Chrome." });
@@ -161,14 +193,32 @@ export default function QuotationWorkspaceScreen() {
         setIsListening(false);
         return;
       }
-      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognition = new SR();
+      type WebSpeechWindow = Window & typeof globalThis & {
+        SpeechRecognition?: new () => {
+          lang: string; interimResults: boolean; continuous: boolean;
+          onstart: (() => void) | null; onend: (() => void) | null;
+          onresult: ((e: { results: { length: number; [n: number]: { [n: number]: { transcript: string } } } }) => void) | null;
+          onerror: (() => void) | null;
+          start(): void; stop(): void;
+        };
+        webkitSpeechRecognition?: new () => {
+          lang: string; interimResults: boolean; continuous: boolean;
+          onstart: (() => void) | null; onend: (() => void) | null;
+          onresult: ((e: { results: { length: number; [n: number]: { [n: number]: { transcript: string } } } }) => void) | null;
+          onerror: (() => void) | null;
+          start(): void; stop(): void;
+        };
+      };
+      const SRCtor = (window as WebSpeechWindow).SpeechRecognition
+        || (window as WebSpeechWindow).webkitSpeechRecognition;
+      if (!SRCtor) return;
+      const recognition = new SRCtor();
       recognition.lang = "en-IN";
       recognition.interimResults = true;
       recognition.continuous = false;
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event) => {
         const results = event.results;
         const transcript = results[results.length - 1][0].transcript;
         if (transcript) setInput(transcript);
@@ -179,7 +229,6 @@ export default function QuotationWorkspaceScreen() {
       return;
     }
 
-    // ── Path 2: Native dev build — expo-speech-recognition ───────────────────
     if (_nativeSpeechAvailable && ExpoSpeechRecognitionModule) {
       if (isListening) {
         ExpoSpeechRecognitionModule.stop();
@@ -198,14 +247,11 @@ export default function QuotationWorkspaceScreen() {
       return;
     }
 
-    // ── Path 3: Expo Go Android — expo-audio record → Gemini transcription ───
     if (isListening) {
-      // Stop the countdown timer
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
-      // Stop recording and send for transcription
       try {
         setIsListening(false);
         setRecordingSecs(0);
@@ -217,9 +263,7 @@ export default function QuotationWorkspaceScreen() {
           return;
         }
         setIsTranscribing(true);
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
         const text = await transcribeAudio(base64, "audio/m4a");
         setIsTranscribing(false);
         if (text) {
@@ -240,7 +284,6 @@ export default function QuotationWorkspaceScreen() {
       return;
     }
 
-    // Start recording
     try {
       const { granted } = await AudioModule.requestRecordingPermissionsAsync();
       if (!granted) {
@@ -253,7 +296,6 @@ export default function QuotationWorkspaceScreen() {
       setRecordingSecs(0);
       setIsListening(true);
 
-      // Tick counter + auto-stop after MAX_RECORD_SECS
       let secs = 0;
       recordingTimerRef.current = setInterval(() => {
         secs += 1;
@@ -261,7 +303,7 @@ export default function QuotationWorkspaceScreen() {
         if (secs >= MAX_RECORD_SECS) {
           clearInterval(recordingTimerRef.current!);
           recordingTimerRef.current = null;
-          handleMicPress(); // trigger stop-and-transcribe
+          handleMicPress();
         }
       }, 1000);
     } catch {
@@ -269,34 +311,103 @@ export default function QuotationWorkspaceScreen() {
     }
   };
 
+  // Build event cards from quotation/invoice context data.
+  // NOTE: pipe `|` is used as delimiter (not colon) to avoid colliding with ISO date colons.
+  const eventItems = useMemo((): ChatMessage[] => {
+    if (!lead) return [];
+    const leadQuotations = quotations.filter((q) => q.leadId === lead.id);
+    const leadInvoices = invoices.filter((inv) => inv.leadId === lead.id);
+    const events: ChatMessage[] = [];
+
+    for (const q of leadQuotations) {
+      const sub = q.items.reduce((s, i) => s + i.quantity * i.rate, 0);
+      const d = q.discount;
+      const discAmt = d?.enabled ? (d.type === "percent" ? (sub * d.value) / 100 : Math.min(d.value, sub)) : 0;
+      const afterDisc = sub - discAmt;
+      const t = q.tax;
+      const taxAmt = t?.enabled ? (afterDisc * t.rate) / 100 : 0;
+      const total = afterDisc + taxAmt;
+      events.push({
+        id: `quote-event-${q.id}`,
+        role: "assistant",
+        content: `__EVENT_QUOTATION__|${q.id}|${q.quoteNumber}|${total}|${q.createdAt}`,
+        timestamp: new Date(q.createdAt).getTime(),
+      });
+    }
+
+    for (const inv of leadInvoices) {
+      const sub = inv.items.reduce((s, i) => s + i.quantity * i.rate, 0);
+      const d = inv.discount;
+      const discAmt = d?.enabled ? (d.type === "percent" ? (sub * d.value) / 100 : Math.min(d.value, sub)) : 0;
+      const afterDisc = sub - discAmt;
+      const t = inv.tax;
+      const taxAmt = t?.enabled ? (afterDisc * t.rate) / 100 : 0;
+      const total = afterDisc + taxAmt;
+      events.push({
+        id: `inv-event-${inv.id}`,
+        role: "assistant",
+        content: `__EVENT_INVOICE__|${inv.id}|${inv.invoiceNumber}|${total}|${inv.createdAt}|${inv.status}`,
+        timestamp: new Date(inv.createdAt).getTime(),
+      });
+    }
+    return events;
+  }, [lead?.id, quotations, invoices]);
+
+  // Unified sorted timeline (newest-first for inverted FlatList)
+  const timeline = useMemo((): ChatMessage[] => {
+    const combined = [...messages, ...eventItems];
+    combined.sort((a, b) => b.timestamp - a.timestamp);
+    return combined;
+  }, [messages, eventItems]);
+
+  // On mount: set chatStarted and populate welcome message if quotation/invoices exist
   useEffect(() => {
-    const existing = lead ? getQuotationForLead(lead.id) : undefined;
+    if (!lead) return;
+    // Get latest quotation by createdAt (most recent)
+    const leadQuotationsSorted = quotations
+      .filter((q) => q.leadId === lead.id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const existing = leadQuotationsSorted[0];
+    const leadInvoices = invoices.filter((inv) => inv.leadId === lead.id);
+
     if (existing) {
       setQuotationItems(existing.items);
-      const quoteDate = new Date(existing.createdAt).toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
       setChatStarted(true);
-      setMessages([
-        {
-          id: generateId(),
-          role: "assistant",
-          content: `You have an existing quotation (${existing.quoteNumber}) for ${lead?.name} created on ${quoteDate}. What would you like to do?`,
-          buttons: [
-            { label: "Edit Previous Quote", action: "edit_quote", icon: "edit-2" },
-            { label: "Create New Quote", action: "new_quote", icon: "plus-circle" },
-            { label: "Send Reminder on WhatsApp", action: "send_reminder", icon: "message-circle" },
-          ],
-        },
-      ]);
+      const quoteDate = new Date(existing.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      const hasInvoices = leadInvoices.length > 0;
+      const buttons: ChatMessage["buttons"] = [
+        { label: "Edit Quotation", action: "edit_quote", icon: "edit-2" },
+        { label: "Create New Quote", action: "new_quote", icon: "plus-circle" },
+        { label: "Send Reminder on WhatsApp", action: "send_reminder", icon: "message-circle" },
+      ];
+      if (!hasInvoices) {
+        buttons.splice(2, 0, { label: "Convert to Invoice", action: "convert_to_invoice", icon: "file-text" });
+      }
+      const now = Date.now();
+      setMessages([{
+        id: generateId(),
+        role: "assistant",
+        content: `You have an existing quotation for ${lead.name} (${existing.quoteNumber}) created on ${quoteDate}. What would you like to do?`,
+        buttons,
+        timestamp: now,
+      }]);
+    } else if (leadInvoices.length > 0) {
+      setChatStarted(true);
+      setMessages([{
+        id: generateId(),
+        role: "assistant",
+        content: `${leadInvoices.length} invoice${leadInvoices.length !== 1 ? "s" : ""} found for ${lead.name}. You can create a quotation or a new invoice.`,
+        buttons: [
+          { label: "Create Quotation", action: "start_quote", icon: "file-text" },
+          { label: "Create Invoice", action: "create_invoice", icon: "credit-card" },
+        ],
+        timestamp: Date.now(),
+      }]);
     }
-    // No existing quote → stay in pre-chat state, show "Create Quotation" button
   }, []);
 
-  const addMessage = useCallback((msg: Omit<ChatMessage, "id">) => {
-    const newMsg = { ...msg, id: generateId() };
+  const addMessage = useCallback((msg: Omit<ChatMessage, "id" | "timestamp">) => {
+    const newMsg: ChatMessage = { ...msg, id: generateId(), timestamp: Date.now() };
     setMessages((prev) => [newMsg, ...prev]);
     return newMsg;
   }, []);
@@ -304,28 +415,63 @@ export default function QuotationWorkspaceScreen() {
   const handleStartChat = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setChatStarted(true);
-    setMessages([
-      {
-        id: generateId(),
-        role: "assistant",
-        content: `Sure! Tell me what products you want to add to the quotation for ${lead?.name || "this lead"}. You can type or tap the mic to speak.`,
-      },
-    ]);
+    setMessages([{
+      id: generateId(),
+      role: "assistant",
+      content: `Sure! Tell me what products you want to add to the quotation for ${lead?.name || "this lead"}. You can type or tap the mic to speak.`,
+      timestamp: Date.now(),
+    }]);
   }, [lead]);
+
+  const getLatestQuotation = useCallback(() => {
+    if (!lead) return undefined;
+    return quotations
+      .filter((q) => q.leadId === lead.id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  }, [lead, quotations]);
+
+  const handleStartInvoiceChat = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setChatMode("invoice");
+    setInvoiceItems([]);
+    setConversationHistory([]);
+    setChatStarted(true);
+    setMessages([{
+      id: generateId(),
+      role: "assistant",
+      content: `Sure! Tell me what items you want on the invoice for ${lead?.name || "this lead"}. I'll match them with your product catalogue — even if the spelling is a bit off!`,
+      timestamp: Date.now(),
+    }]);
+  }, [lead]);
+
+  const handleStartInvoice = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setChatStarted(true);
+    const existing = getLatestQuotation();
+    const buttons: ChatMessage["buttons"] = [
+      { label: "Add Items via AI Chat", action: "start_invoice_chat", icon: "zap" },
+    ];
+    if (existing) {
+      buttons.unshift({ label: "Convert Last Quotation to Invoice", action: "convert_to_invoice", icon: "file-text" });
+    }
+    setMessages([{
+      id: generateId(),
+      role: "assistant",
+      content: existing
+        ? `I can create a GST invoice for ${lead?.name}. Convert the last quotation (${existing.quoteNumber}), or describe items in chat and I'll match them with your catalogue.`
+        : `I can create a GST invoice for ${lead?.name}. Just tell me what to add — I'll match items with your catalogue using AI!`,
+      buttons,
+      timestamp: Date.now(),
+    }]);
+  }, [lead, getLatestQuotation]);
 
   const handleSend = async (text?: string) => {
     const userText = text || input.trim();
     if (!userText || isSending) return;
-    // Stop any active voice input before sending
     if (isListening) {
-      if (_nativeSpeechAvailable && ExpoSpeechRecognitionModule) {
-        ExpoSpeechRecognitionModule.stop();
-      } else if (Platform.OS === "web") {
-        webRecognitionRef.current?.stop();
-      } else {
-        // Expo Go: discard the recording, user explicitly typed
-        audioRecorder.stop().catch(() => {});
-      }
+      if (_nativeSpeechAvailable && ExpoSpeechRecognitionModule) ExpoSpeechRecognitionModule.stop();
+      else if (Platform.OS === "web") webRecognitionRef.current?.stop();
+      else audioRecorder.stop().catch(() => {});
       setIsListening(false);
     }
 
@@ -334,6 +480,28 @@ export default function QuotationWorkspaceScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     addMessage({ role: "user", content: userText });
+
+    // Only offer invoice intent redirect when in quotation mode; invoice mode handles all text as item input
+    if (chatMode === "quotation" && hasInvoiceIntent(userText)) {
+      const existing = getLatestQuotation();
+      const buttons: ChatMessage["buttons"] = [
+        { label: "Add Items via AI Chat", action: "start_invoice_chat", icon: "zap" },
+      ];
+      if (existing) {
+        buttons.unshift({ label: "Convert Last Quotation to Invoice", action: "convert_to_invoice", icon: "file-text" });
+      }
+      addMessage({
+        role: "assistant",
+        content: existing
+          ? `I can create a GST invoice for ${lead?.name}. Convert the last quotation (${existing.quoteNumber}) or describe items in chat?`
+          : `I can create a new GST invoice for ${lead?.name}. Describe the items and I'll match them with your catalogue!`,
+        buttons,
+      });
+      setIsSending(false);
+      return;
+    }
+
+    const isInvoiceMode = chatMode === "invoice";
     const loadingMsg = addMessage({ role: "assistant", content: "", isLoading: true });
     const newHistory: AIMessage[] = [...conversationHistory, { role: "user", content: userText }];
     const response = await parseRequirementWithAI(userText, products, conversationHistory);
@@ -342,54 +510,99 @@ export default function QuotationWorkspaceScreen() {
     if (response.type === "error") {
       addMessage({ role: "assistant", content: response.message });
     } else if (response.type === "quotation_ready") {
-      const newItems = [...quotationItems, ...(response.quotationItems || [])];
-      setQuotationItems(newItems);
-      setConversationHistory([...newHistory, { role: "assistant", content: "All items added." }]);
-      addMessage({
-        role: "assistant",
-        content: `${newItems.length} item${newItems.length !== 1 ? "s" : ""} added. Ready to preview?`,
-        buttons: [{ label: "View Quotation Preview", action: "view_preview", icon: "eye" }],
-      });
+      const added = response.quotationItems || [];
+      if (isInvoiceMode) {
+        const newItems = [...invoiceItems, ...added];
+        setInvoiceItems(newItems);
+        setConversationHistory([...newHistory, { role: "assistant", content: "All items added." }]);
+        addMessage({
+          role: "assistant",
+          content: `${newItems.length} item${newItems.length !== 1 ? "s" : ""} added to invoice. Ready to preview?`,
+          buttons: [{ label: "Preview Invoice", action: "view_invoice_preview", icon: "eye" }],
+        });
+      } else {
+        const newItems = [...quotationItems, ...added];
+        setQuotationItems(newItems);
+        setConversationHistory([...newHistory, { role: "assistant", content: "All items added." }]);
+        addMessage({
+          role: "assistant",
+          content: `${newItems.length} item${newItems.length !== 1 ? "s" : ""} added. Ready to preview?`,
+          buttons: [{ label: "View Quotation Preview", action: "view_preview", icon: "eye" }],
+        });
+      }
     } else if (response.type === "needs_action") {
       const matched = response.quotationItems || [];
       const unknown = response.unknownItems || [];
-      if (matched.length > 0) setQuotationItems((prev) => [...prev, ...matched]);
-      if (matched.length > 0) {
-        addMessage({
-          role: "assistant",
-          content: `Added ${matched.length} item${matched.length !== 1 ? "s" : ""} to the quotation.`,
-        });
+      if (isInvoiceMode) {
+        if (matched.length > 0) setInvoiceItems((prev) => [...prev, ...matched]);
+        if (matched.length > 0) {
+          addMessage({ role: "assistant", content: `Added ${matched.length} item${matched.length !== 1 ? "s" : ""} to the invoice.` });
+        }
+        for (const itemName of unknown) {
+          addMessage({
+            role: "assistant",
+            content: `"${itemName}" is not in your catalogue yet.`,
+            buttons: [{ label: "Add to Catalogue & Invoice", action: `add_unknown:${itemName}`, icon: "plus-circle" }],
+          });
+        }
+      } else {
+        if (matched.length > 0) setQuotationItems((prev) => [...prev, ...matched]);
+        if (matched.length > 0) {
+          addMessage({ role: "assistant", content: `Added ${matched.length} item${matched.length !== 1 ? "s" : ""} to the quotation.` });
+        }
+        for (const itemName of unknown) {
+          addMessage({
+            role: "assistant",
+            content: `There is no item named "${itemName}" in your catalogue.`,
+            buttons: [{ label: "Add to Catalogue & Quotation", action: `add_unknown:${itemName}`, icon: "plus-circle" }],
+          });
+        }
       }
-      for (const itemName of unknown) {
-        addMessage({
-          role: "assistant",
-          content: `There is no item named "${itemName}" in your catalogue.`,
-          buttons: [
-            { label: "Add to Quotation", action: `add_unknown:${itemName}`, icon: "plus-circle" },
-          ],
-        });
-      }
-      const unknownList = unknown.map((u) => `"${u}"`).join(", ");
+      const unknownList = unknown.map((u: string) => `"${u}"`).join(", ");
       setConversationHistory([...newHistory, { role: "assistant", content: `Some items not in catalogue: ${unknownList}` }]);
     }
 
     setIsSending(false);
   };
 
+  const handleSaveInvoiceAndPreview = async () => {
+    if (!lead || invoiceItems.length === 0) return;
+    const num = await generateInvoiceNumber();
+    const vendorStateCode = getVendorStateCode(vendorProfile?.gstNumber);
+    const defaultPlaceOfSupply = "29";
+    const subtotal = invoiceItems.reduce((s, i) => s + i.quantity * i.rate, 0);
+    const taxSplit = computeTaxSplit(0, subtotal, vendorStateCode, defaultPlaceOfSupply);
+    const invoice: Invoice = {
+      id: generateId(),
+      leadId: lead.id,
+      invoiceNumber: num,
+      invoiceDate: new Date().toISOString().split("T")[0],
+      items: invoiceItems.map((item) => ({ ...item, id: generateId() })),
+      placeOfSupply: defaultPlaceOfSupply,
+      taxSplit,
+      status: "draft",
+      createdAt: new Date().toISOString(),
+    };
+    await saveInvoice(invoice);
+    router.push(`/lead/${lead.id}/invoice-preview?invoiceId=${invoice.id}`);
+  };
+
   const handleButtonAction = async (action: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (action === "view_preview") {
       handleSaveAndPreview();
+    } else if (action === "view_invoice_preview") {
+      handleSaveInvoiceAndPreview();
     } else if (action === "edit_quote") {
       if (!lead) return;
       router.push(`/lead/${lead.id}/preview`);
-    } else if (action === "new_quote") {
+    } else if (action === "new_quote" || action === "start_quote") {
       setQuotationItems([]);
       setConversationHistory([]);
       handleStartChat();
     } else if (action === "send_reminder") {
       if (!lead) return;
-      const existing = getQuotationForLead(lead.id);
+      const existing = getLatestQuotation();
       const dateStr = existing
         ? new Date(existing.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
         : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
@@ -398,10 +611,62 @@ export default function QuotationWorkspaceScreen() {
       Linking.openURL(`https://wa.me/${cleanNumber}?text=${msg}`).catch(() =>
         addMessage({ role: "assistant", content: "Could not open WhatsApp. Please check if it is installed." })
       );
+    } else if (action === "create_invoice") {
+      handleStartInvoice();
+    } else if (action === "start_invoice_chat") {
+      handleStartInvoiceChat();
+    } else if (action === "convert_to_invoice") {
+      if (!lead) return;
+      const existing = getLatestQuotation();
+      if (!existing) {
+        router.push(`/lead/${lead.id}/invoice-preview`);
+        return;
+      }
+      const num = await generateInvoiceNumber();
+      const vendorStateCode = getVendorStateCode(vendorProfile?.gstNumber);
+      const defaultPlaceOfSupply = "29";
+      const subtotal = existing.items.reduce((s, i) => s + i.quantity * i.rate, 0);
+      const d = existing.discount;
+      const discAmt = d?.enabled ? (d.type === "percent" ? (subtotal * d.value) / 100 : Math.min(d.value, subtotal)) : 0;
+      const afterDisc = subtotal - discAmt;
+      const taxRate = existing.tax?.enabled ? (existing.tax.rate ?? 0) : 0;
+      const taxSplit = computeTaxSplit(taxRate, afterDisc, vendorStateCode, defaultPlaceOfSupply);
+      const invoice: Invoice = {
+        id: generateId(),
+        leadId: lead.id,
+        invoiceNumber: num,
+        invoiceDate: new Date().toISOString().split("T")[0],
+        items: existing.items.map((item) => ({ ...item, id: generateId() })),
+        notes: existing.notes,
+        discount: existing.discount,
+        tax: existing.tax ? { ...existing.tax, label: "GST" } : undefined,
+        placeOfSupply: defaultPlaceOfSupply,
+        taxSplit,
+        status: "draft",
+        createdAt: new Date().toISOString(),
+      };
+      // Save first, then navigate so invoice-preview can read from context
+      await saveInvoice(invoice);
+      router.push(`/lead/${lead.id}/invoice-preview?invoiceId=${invoice.id}`);
+    } else if (action === "new_invoice") {
+      handleStartInvoiceChat();
+    } else if (action === "view_quotation") {
+      if (!lead) return;
+      router.push(`/lead/${lead.id}/preview`);
+    } else if (action.startsWith("view_invoice:")) {
+      const invId = action.slice("view_invoice:".length);
+      if (!lead) return;
+      router.push(`/lead/${lead.id}/invoice-pdf?invoiceId=${invId}`);
     } else if (action.startsWith("add_unknown:")) {
       const itemName = action.slice("add_unknown:".length);
       setAddItemModal({ visible: true, itemName, price: "", unit: "" });
     }
+  };
+
+  const handleInvoiceStatusChange = async (invoiceId: string, status: InvoiceStatus) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await updateInvoiceStatus(invoiceId, status);
+    setStatusMenuFor(null);
   };
 
   const handleAddItemSubmit = async () => {
@@ -416,17 +681,20 @@ export default function QuotationWorkspaceScreen() {
       unit: finalUnit,
       rate: parsedPrice,
     };
-    setQuotationItems((prev) => [...prev, newItem]);
-    setAddItemModal({ visible: false, itemName: "", price: "", unit: "" });
-    addMessage({
-      role: "assistant",
-      content: `"${itemName}" added to your catalogue and quotation. Anything else to add?`,
-    });
+    if (chatMode === "invoice") {
+      setInvoiceItems((prev) => [...prev, newItem]);
+      setAddItemModal({ visible: false, itemName: "", price: "", unit: "" });
+      addMessage({ role: "assistant", content: `"${itemName}" added to your catalogue and invoice. Anything else?` });
+    } else {
+      setQuotationItems((prev) => [...prev, newItem]);
+      setAddItemModal({ visible: false, itemName: "", price: "", unit: "" });
+      addMessage({ role: "assistant", content: `"${itemName}" added to your catalogue and quotation. Anything else to add?` });
+    }
   };
 
   const handleSaveAndPreview = async () => {
     if (!lead) return;
-    const existing = getQuotationForLead(lead.id);
+    const existing = getLatestQuotation();
     const quotation = existing
       ? { ...existing, items: quotationItems }
       : {
@@ -443,59 +711,191 @@ export default function QuotationWorkspaceScreen() {
   };
 
   const getButtonStyle = (action: string) => {
-    const style = BUTTON_STYLE_MAP[getActionStyleKey(action)] || "outline";
+    const styleKey = getActionStyleKey(action);
+    const style = BUTTON_STYLE_MAP[styleKey] || "outline";
     if (style === "primary") return { bg: colors.primary, textColor: "#fff", border: undefined };
     if (style === "whatsapp") return { bg: colors.whatsapp, textColor: "#fff", border: undefined };
+    if (style === "invoice") return { bg: "#1e1b4b", textColor: "#fff", border: undefined };
     return { bg: colors.muted, textColor: colors.primary, border: colors.primary };
   };
 
-  const renderItem = ({ item }: { item: ChatMessage }) => (
-    <View style={[styles.messageRow, item.role === "user" ? styles.userRow : styles.assistantRow]}>
-      {item.role === "assistant" && (
-        <View style={[styles.agentAvatar, { backgroundColor: colors.primary }]}>
-          <Icon name="zap" size={12} color="#fff" />
-        </View>
-      )}
-      <View
-        style={[
-          styles.bubble,
-          item.role === "user"
-            ? [styles.userBubble, { backgroundColor: colors.primary }]
-            : [styles.assistantBubble, { backgroundColor: colors.card, borderColor: colors.border }],
-        ]}
-      >
-        {item.isLoading ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : (
-          <>
-            {!!item.content && (
-              <Text style={[styles.bubbleText, { color: item.role === "user" ? "#fff" : colors.foreground }]}>
-                {item.content}
-              </Text>
-            )}
-            {item.buttons && item.buttons.length > 0 && (
-              <View style={styles.buttonGroup}>
-                {item.buttons.map((btn) => {
-                  const s = getButtonStyle(btn.action);
-                  return (
-                    <TouchableOpacity
-                      key={btn.action}
-                      style={[styles.actionButton, { backgroundColor: s.bg, borderColor: s.border, borderWidth: s.border ? 1.5 : 0 }]}
-                      onPress={() => handleButtonAction(btn.action)}
-                      activeOpacity={0.8}
-                    >
-                      {btn.icon && <Icon name={btn.icon as any} size={14} color={s.textColor} />}
-                      <Text style={[styles.actionButtonText, { color: s.textColor }]}>{btn.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+  const parseEventContent = (content: string) => {
+    if (content.startsWith("__EVENT_QUOTATION__|")) {
+      const [, id, number, total, date] = content.split("|");
+      return { type: "quotation" as const, id, number, total: parseFloat(total), date };
+    }
+    if (content.startsWith("__EVENT_INVOICE__|")) {
+      const [, id, number, total, date, status] = content.split("|");
+      return { type: "invoice" as const, id, number, total: parseFloat(total), date, status: status as InvoiceStatus };
+    }
+    return null;
+  };
+
+  const renderEventCard = (item: ChatMessage) => {
+    const ev = parseEventContent(item.content);
+    if (!ev) return null;
+
+    if (ev.type === "quotation") {
+      const dateStr = new Date(ev.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      const sendQuoteReminder = () => {
+        if (!lead) return;
+        const cleanNumber = lead.whatsappNumber.replace(/\D/g, "");
+        const msg = encodeURIComponent(`Hello ${lead.name}, I have sent you a Quotation on ${dateStr}, waiting for your response.`);
+        Linking.openURL(`https://wa.me/${cleanNumber}?text=${msg}`).catch(() =>
+          addMessage({ role: "assistant", content: "Could not open WhatsApp. Please check if it is installed." })
+        );
+      };
+      return (
+        <View style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.eventCardAccent, { backgroundColor: colors.primary }]} />
+          <View style={styles.eventCardBody}>
+            <View style={styles.eventCardRow}>
+              <Icon name="file-text" size={14} color={colors.primary} />
+              <Text style={[styles.eventCardNumber, { color: colors.primary }]}>{ev.number}</Text>
+              <View style={[styles.eventTypeBadge, { backgroundColor: colors.primaryLight }]}>
+                <Text style={[styles.eventTypeText, { color: colors.primary }]}>Quotation</Text>
               </View>
-            )}
-          </>
+            </View>
+            <View style={styles.eventCardRow}>
+              <Text style={[styles.eventCardDate, { color: colors.mutedForeground }]}>{dateStr}</Text>
+              <Text style={[styles.eventCardTotal, { color: colors.foreground }]}>₹{ev.total.toLocaleString("en-IN")}</Text>
+            </View>
+            <View style={styles.eventCardRow}>
+              <TouchableOpacity
+                style={[styles.eventCardBtn, { backgroundColor: colors.primary, flex: 1 }]}
+                onPress={() => handleButtonAction("view_quotation")}
+                activeOpacity={0.8}
+              >
+                <Icon name="eye" size={13} color="#fff" />
+                <Text style={styles.eventCardBtnText}>View Quotation</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.reminderBtn, { borderColor: "#25D366" }]}
+                onPress={sendQuoteReminder}
+                activeOpacity={0.8}
+              >
+                <Icon name="message-circle" size={12} color="#25D366" />
+                <Text style={[styles.reminderBtnText, { color: "#25D366" }]}>Remind</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    if (ev.type === "invoice") {
+      const dateStr = new Date(ev.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      const statusCfg = INVOICE_STATUS_CONFIG[ev.status] || INVOICE_STATUS_CONFIG.draft;
+      const sendInvoiceReminder = () => {
+        if (!lead) return;
+        const cleanNumber = lead.whatsappNumber.replace(/\D/g, "");
+        const msg = encodeURIComponent(`Hello ${lead.name}, I have sent you an Invoice on ${dateStr}, waiting for your response.`);
+        Linking.openURL(`https://wa.me/${cleanNumber}?text=${msg}`).catch(() =>
+          addMessage({ role: "assistant", content: "Could not open WhatsApp. Please check if it is installed." })
+        );
+      };
+      return (
+        <View style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.eventCardAccent, { backgroundColor: "#4338CA" }]} />
+          <View style={styles.eventCardBody}>
+            <View style={styles.eventCardRow}>
+              <Icon name="credit-card" size={14} color="#4338CA" />
+              <Text style={[styles.eventCardNumber, { color: "#4338CA" }]}>{ev.number}</Text>
+              <View style={[styles.eventTypeBadge, { backgroundColor: "#EEF2FF" }]}>
+                <Text style={[styles.eventTypeText, { color: "#4338CA" }]}>Invoice</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}
+                onPress={() => setStatusMenuFor(ev.id)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.statusDot, { backgroundColor: statusCfg.dot }]} />
+                <Text style={[styles.statusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
+                <Icon name="chevron-down" size={10} color={statusCfg.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.eventCardRow}>
+              <Text style={[styles.eventCardDate, { color: colors.mutedForeground }]}>{dateStr}</Text>
+              <Text style={[styles.eventCardTotal, { color: colors.foreground }]}>₹{ev.total.toLocaleString("en-IN")}</Text>
+            </View>
+            <View style={styles.eventCardRow}>
+              <TouchableOpacity
+                style={[styles.eventCardBtn, { backgroundColor: "#4338CA", flex: 1 }]}
+                onPress={() => handleButtonAction(`view_invoice:${ev.id}`)}
+                activeOpacity={0.8}
+              >
+                <Icon name="eye" size={13} color="#fff" />
+                <Text style={styles.eventCardBtnText}>View Invoice</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.reminderBtn, { borderColor: "#25D366" }]}
+                onPress={sendInvoiceReminder}
+                activeOpacity={0.8}
+              >
+                <Icon name="message-circle" size={12} color="#25D366" />
+                <Text style={[styles.reminderBtnText, { color: "#25D366" }]}>Remind</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  const renderItem = ({ item }: { item: ChatMessage }) => {
+    if (item.content.startsWith("__EVENT_")) {
+      const card = renderEventCard(item);
+      return card ? <View style={{ marginVertical: 4 }}>{card}</View> : null;
+    }
+    return (
+      <View style={[styles.messageRow, item.role === "user" ? styles.userRow : styles.assistantRow]}>
+        {item.role === "assistant" && (
+          <View style={[styles.agentAvatar, { backgroundColor: colors.primary }]}>
+            <Icon name="zap" size={12} color="#fff" />
+          </View>
         )}
+        <View
+          style={[
+            styles.bubble,
+            item.role === "user"
+              ? [styles.userBubble, { backgroundColor: colors.primary }]
+              : [styles.assistantBubble, { backgroundColor: colors.card, borderColor: colors.border }],
+          ]}
+        >
+          {item.isLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <>
+              {!!item.content && (
+                <Text style={[styles.bubbleText, { color: item.role === "user" ? "#fff" : colors.foreground }]}>
+                  {item.content}
+                </Text>
+              )}
+              {item.buttons && item.buttons.length > 0 && (
+                <View style={styles.buttonGroup}>
+                  {item.buttons.map((btn) => {
+                    const s = getButtonStyle(btn.action);
+                    return (
+                      <TouchableOpacity
+                        key={btn.action}
+                        style={[styles.actionButton, { backgroundColor: s.bg, borderColor: s.border, borderWidth: s.border ? 1.5 : 0 }]}
+                        onPress={() => handleButtonAction(btn.action)}
+                        activeOpacity={0.8}
+                      >
+                        {btn.icon && <Icon name={btn.icon as any} size={14} color={s.textColor} />}
+                        <Text style={[styles.actionButtonText, { color: s.textColor }]}>{btn.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   if (!lead) {
     return (
@@ -519,17 +919,15 @@ export default function QuotationWorkspaceScreen() {
         }
         rightElement={
           quotationItems.length > 0 ? (
-            <TouchableOpacity
-              onPress={handleSaveAndPreview}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={["#4F46E5", "#6D28D9"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.previewBtn}
-              >
+            <TouchableOpacity onPress={handleSaveAndPreview} activeOpacity={0.85}>
+              <LinearGradient colors={["#4F46E5", "#6D28D9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.previewBtn}>
                 <Text style={styles.previewBtnText}>Preview</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : invoiceItems.length > 0 ? (
+            <TouchableOpacity onPress={handleSaveInvoiceAndPreview} activeOpacity={0.85}>
+              <LinearGradient colors={["#1e1b4b", "#4338CA"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.previewBtn}>
+                <Text style={styles.previewBtnText}>Invoice</Text>
               </LinearGradient>
             </TouchableOpacity>
           ) : undefined
@@ -538,24 +936,31 @@ export default function QuotationWorkspaceScreen() {
 
       {quotationItems.length > 0 && (
         <View style={[styles.itemsSummary, { backgroundColor: colors.primaryLight }]}>
+          <Icon name="file-text" size={13} color={colors.primary} />
           <Text style={[styles.itemsSummaryText, { color: colors.primary }]}>
             {quotationItems.length} item{quotationItems.length !== 1 ? "s" : ""} — ₹
             {quotationItems.reduce((sum, item) => sum + item.quantity * item.rate, 0).toLocaleString("en-IN")}
           </Text>
         </View>
       )}
+      {invoiceItems.length > 0 && (
+        <View style={[styles.itemsSummary, { backgroundColor: "#EEF2FF" }]}>
+          <Icon name="credit-card" size={13} color="#4338CA" />
+          <Text style={[styles.itemsSummaryText, { color: "#4338CA" }]}>
+            {invoiceItems.length} item{invoiceItems.length !== 1 ? "s" : ""} — ₹
+            {invoiceItems.reduce((sum, item) => sum + item.quantity * item.rate, 0).toLocaleString("en-IN")}
+          </Text>
+        </View>
+      )}
 
-      {/* ── Pre-chat state: no existing quotation, user hasn't started yet ── */}
       {!chatStarted && (
         <View style={styles.preChatContainer}>
           <View style={[styles.preChatIconWrap, { backgroundColor: colors.primaryLight }]}>
             <Icon name="file-text" size={38} color={colors.primary} />
           </View>
-          <Text style={[styles.preChatTitle, { color: colors.foreground }]}>
-            New Quotation
-          </Text>
+          <Text style={[styles.preChatTitle, { color: colors.foreground }]}>New Quotation or Invoice</Text>
           <Text style={[styles.preChatSubtitle, { color: colors.mutedForeground }]}>
-            Create a quotation for {lead.name} and share it directly on WhatsApp as a PDF.
+            Create a quotation or GST invoice for {lead.name} and share it on WhatsApp.
           </Text>
           <GradientButton
             label="Create Quotation"
@@ -564,15 +969,18 @@ export default function QuotationWorkspaceScreen() {
             size="lg"
             style={styles.createQuoteBtn}
           />
+          <TouchableOpacity
+            style={[styles.createInvoiceBtn, { borderColor: colors.primary, backgroundColor: colors.primaryLight }]}
+            onPress={handleStartInvoice}
+            activeOpacity={0.8}
+          >
+            <Icon name="credit-card" size={16} color={colors.primary} />
+            <Text style={[styles.createInvoiceBtnText, { color: colors.primary }]}>Create Invoice</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      <Modal
-        visible={addItemModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAddItemModal((s) => ({ ...s, visible: false }))}
-      >
+      <Modal visible={addItemModal.visible} transparent animationType="slide" onRequestClose={() => setAddItemModal((s) => ({ ...s, visible: false }))}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
@@ -581,7 +989,6 @@ export default function QuotationWorkspaceScreen() {
                 <Icon name="x" size={22} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
-
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Product Name</Text>
               <TextInput
@@ -592,7 +999,6 @@ export default function QuotationWorkspaceScreen() {
                 placeholderTextColor={colors.mutedForeground}
                 autoCapitalize="words"
               />
-
               <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Price (₹)</Text>
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground }]}
@@ -602,7 +1008,6 @@ export default function QuotationWorkspaceScreen() {
                 placeholderTextColor={colors.mutedForeground}
                 keyboardType="decimal-pad"
               />
-
               <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Unit of Measurement</Text>
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground }]}
@@ -612,7 +1017,6 @@ export default function QuotationWorkspaceScreen() {
                 placeholderTextColor={colors.mutedForeground}
                 autoCapitalize="none"
               />
-
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalCancelBtn, { borderColor: colors.border }]}
@@ -636,10 +1040,74 @@ export default function QuotationWorkspaceScreen() {
         </View>
       </Modal>
 
+      <Modal visible={actionMenuVisible} transparent animationType="fade">
+        <TouchableOpacity style={styles.actionMenuOverlay} activeOpacity={1} onPress={() => setActionMenuVisible(false)}>
+          <View style={[styles.actionMenuSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TouchableOpacity
+              style={[styles.actionMenuItem, { borderBottomColor: colors.border }]}
+              onPress={() => {
+                setActionMenuVisible(false);
+                setQuotationItems([]);
+                setConversationHistory([]);
+                handleStartChat();
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.actionMenuIcon, { backgroundColor: colors.primaryLight }]}>
+                <Icon name="file-text" size={16} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.actionMenuLabel, { color: colors.foreground }]}>New Quotation</Text>
+                <Text style={[styles.actionMenuSub, { color: colors.mutedForeground }]}>Create via AI chat</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionMenuItem}
+              onPress={() => {
+                setActionMenuVisible(false);
+                handleStartInvoice();
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.actionMenuIcon, { backgroundColor: "#EEF2FF" }]}>
+                <Icon name="credit-card" size={16} color="#4338CA" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.actionMenuLabel, { color: colors.foreground }]}>New Invoice</Text>
+                <Text style={[styles.actionMenuSub, { color: colors.mutedForeground }]}>GST-compliant tax invoice</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Invoice status menu (on-card) */}
+      <Modal visible={!!statusMenuFor} transparent animationType="fade">
+        <TouchableOpacity style={styles.statusMenuOverlay} activeOpacity={1} onPress={() => setStatusMenuFor(null)}>
+          <View style={[styles.statusMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.statusMenuTitle, { color: colors.mutedForeground }]}>Update Status</Text>
+            {INVOICE_STATUS_ORDER.map((s) => {
+              const cfg = INVOICE_STATUS_CONFIG[s];
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.statusMenuItem]}
+                  onPress={() => statusMenuFor ? handleInvoiceStatusChange(statusMenuFor, s) : null}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: cfg.dot, width: 8, height: 8, borderRadius: 4 }]} />
+                  <Text style={[styles.statusMenuLabel, { color: colors.foreground }]}>{cfg.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <KeyboardAvoidingView style={chatStarted ? { flex: 1 } : { height: 0, overflow: "hidden" }} behavior="padding" keyboardVerticalOffset={0}>
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={timeline}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           inverted
@@ -654,9 +1122,7 @@ export default function QuotationWorkspaceScreen() {
             {isTranscribing ? (
               <>
                 <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={[styles.listeningText, { color: colors.primary }]}>
-                  Transcribing… please wait
-                </Text>
+                <Text style={[styles.listeningText, { color: colors.primary }]}>Transcribing… please wait</Text>
               </>
             ) : (
               <>
@@ -681,12 +1147,20 @@ export default function QuotationWorkspaceScreen() {
             },
           ]}
         >
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: colors.muted }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setActionMenuVisible(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Icon name="plus" size={20} color={colors.mutedForeground} />
+          </TouchableOpacity>
+
           <TextInput
-            style={[
-              styles.chatInput,
-              { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground },
-            ]}
-            placeholder={isTranscribing ? "Transcribing…" : isListening ? "Recording… tap mic to stop" : "Type or speak your requirement…"}
+            style={[styles.chatInput, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground }]}
+            placeholder={isTranscribing ? "Transcribing…" : isListening ? "Recording… tap mic to stop" : "Type your requirement…"}
             placeholderTextColor={isListening || isTranscribing ? "#E53935" : colors.mutedForeground}
             value={input}
             onChangeText={setInput}
@@ -696,10 +1170,7 @@ export default function QuotationWorkspaceScreen() {
           />
 
           <TouchableOpacity
-            style={[
-              styles.iconBtn,
-              { backgroundColor: isListening ? "#FFEBEE" : isTranscribing ? colors.primaryLight : colors.muted },
-            ]}
+            style={[styles.iconBtn, { backgroundColor: isListening ? "#FFEBEE" : isTranscribing ? colors.primaryLight : colors.muted }]}
             onPress={handleMicPress}
             disabled={isTranscribing}
             activeOpacity={0.8}
@@ -708,25 +1179,14 @@ export default function QuotationWorkspaceScreen() {
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <Animated.View style={{ transform: [{ scale: isListening ? pulseAnim : 1 }] }}>
-                <Icon
-                  name={isListening ? "mic-off" : "mic"}
-                  size={20}
-                  color={isListening ? "#E53935" : colors.mutedForeground}
-                />
+                <Icon name={isListening ? "mic-off" : "mic"} size={20} color={isListening ? "#E53935" : colors.mutedForeground} />
               </Animated.View>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => handleSend()}
-            disabled={!input.trim() || isSending}
-            activeOpacity={0.85}
-          >
+          <TouchableOpacity onPress={() => handleSend()} disabled={!input.trim() || isSending} activeOpacity={0.85}>
             {input.trim() ? (
-              <LinearGradient
-                colors={["#4F46E5", "#6D28D9"]}
-                style={styles.sendBtn}
-              >
+              <LinearGradient colors={["#4F46E5", "#6D28D9"]} style={styles.sendBtn}>
                 <Icon name="send" size={18} color="#fff" />
               </LinearGradient>
             ) : (
@@ -755,26 +1215,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   previewBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
-  itemsSummary: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
+  itemsSummary: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
   itemsSummaryText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   chatContent: { paddingHorizontal: 16, paddingTop: 12, gap: 12, flexDirection: "column" },
   messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginVertical: 2 },
   userRow: { justifyContent: "flex-end" },
   assistantRow: { justifyContent: "flex-start" },
-  agentAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
+  agentAvatar: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   bubble: { maxWidth: "82%", borderRadius: 18, padding: 12, gap: 10 },
   userBubble: { borderBottomRightRadius: 4 },
   assistantBubble: { borderBottomLeftRadius: 4, borderWidth: 1 },
@@ -791,39 +1238,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   actionButtonText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  listeningBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
+  eventCard: { borderRadius: 14, borderWidth: 1, flexDirection: "row", overflow: "hidden", marginHorizontal: 4 },
+  eventCardAccent: { width: 4 },
+  eventCardBody: { flex: 1, padding: 12, gap: 8 },
+  eventCardRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  eventCardNumber: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  eventTypeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  eventTypeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  statusDot: { width: 5, height: 5, borderRadius: 3 },
+  statusText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  eventCardDate: { fontSize: 12, fontFamily: "Inter_400Regular", flex: 1 },
+  eventCardTotal: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  eventCardBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, borderRadius: 8 },
+  eventCardBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  reminderBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1.5 },
+  reminderBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  listeningBanner: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   listeningText: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    gap: 8,
-    borderTopWidth: 1,
-  },
-  chatInput: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-    maxHeight: 100,
-  },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  inputBar: { flexDirection: "row", alignItems: "flex-end", paddingHorizontal: 12, paddingTop: 10, gap: 8, borderTopWidth: 1 },
+  chatInput: { flex: 1, borderWidth: 1.5, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, fontFamily: "Inter_400Regular", maxHeight: 100 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   sendBtn: {
     width: 44,
     height: 44,
@@ -834,111 +1269,33 @@ const styles = StyleSheet.create({
     elevation: 3,
     overflow: "hidden",
   },
-  preChatContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 16,
-  },
-  preChatIconWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  preChatTitle: {
-    fontSize: 24,
-    fontFamily: "Inter_700Bold",
-    textAlign: "center",
-    letterSpacing: -0.3,
-  },
-  preChatSubtitle: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  createQuoteBtn: {
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    marginTop: 8,
-  },
-  createQuoteBtnText: {
-    fontSize: 16,
-    fontFamily: "Inter_600SemiBold",
-    color: "#fff",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-    boxShadow: "0px -4px 16px rgba(0, 0, 0, 0.12)",
-    elevation: 8,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-  },
-  modalLabel: {
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-    marginBottom: 6,
-    marginTop: 14,
-  },
-  modalInput: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 24,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalCancelText: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-  },
-  modalSubmitBtn: {
-    flex: 2,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    borderRadius: 12,
-    paddingVertical: 13,
-  },
-  modalSubmitText: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-    color: "#fff",
-  },
+  preChatContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 14 },
+  preChatIconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  preChatTitle: { fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center", letterSpacing: -0.3 },
+  preChatSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 22 },
+  createQuoteBtn: { flexDirection: "row", gap: 10, paddingHorizontal: 32, borderRadius: 16, marginTop: 8 },
+  createInvoiceBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, width: "100%" },
+  createInvoiceBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, boxShadow: "0px -4px 16px rgba(0, 0, 0, 0.12)", elevation: 8 },
+  modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  modalLabel: { fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 6, marginTop: 14 },
+  modalInput: { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, fontFamily: "Inter_400Regular" },
+  modalActions: { flexDirection: "row", gap: 10, marginTop: 24 },
+  modalCancelBtn: { flex: 1, borderWidth: 1.5, borderRadius: 12, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
+  modalCancelText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  modalSubmitBtn: { flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 12, paddingVertical: 13 },
+  modalSubmitText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  actionMenuOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  actionMenuSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, paddingBottom: 32, overflow: "hidden" },
+  actionMenuItem: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderBottomWidth: 1 },
+  actionMenuIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  actionMenuLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  actionMenuSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
+  statusMenuOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
+  statusMenu: { borderRadius: 16, borderWidth: 1, padding: 8, width: 200, gap: 2 },
+  statusMenuTitle: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 10, paddingVertical: 6 },
+  statusMenuItem: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 12, borderRadius: 10 },
+  statusMenuLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
 });
