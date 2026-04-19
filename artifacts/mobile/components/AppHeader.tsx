@@ -15,6 +15,8 @@ interface AppHeaderProps {
   onSubtitlePress?: () => void;
   rightElement?: React.ReactNode;
   compact?: boolean;
+  /** When true, renders the title larger and with more top spacing (e.g. lead name screens) */
+  emphasizedTitle?: boolean;
 }
 
 export function LogoMark({ size = 32 }: { size?: number }) {
@@ -65,6 +67,7 @@ export function AppHeader({
   onSubtitlePress,
   rightElement,
   compact = false,
+  emphasizedTitle = false,
 }: AppHeaderProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -108,9 +111,9 @@ export function AppHeader({
 
       {/* ── Screen title row (stack screens only) ──────────────────────────── */}
       {(title || subtitle) && (
-        <View style={styles.titleRow}>
+        <View style={[styles.titleRow, emphasizedTitle && styles.titleRowEmphasized]}>
           {title && (
-            <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
+            <Text style={[styles.title, emphasizedTitle && styles.titleEmphasized, { color: colors.foreground }]} numberOfLines={1}>
               {title}
             </Text>
           )}
@@ -217,10 +220,16 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     gap: 1,
   },
+  titleRowEmphasized: {
+    paddingTop: 13,
+  },
   title: {
     fontSize: 15,
     fontFamily: "Inter_700Bold",
     letterSpacing: -0.2,
+  },
+  titleEmphasized: {
+    fontSize: 21,
   },
   subtitle: {
     fontSize: 12,

@@ -911,6 +911,7 @@ export default function QuotationWorkspaceScreen() {
         showBack
         onBack={() => router.back()}
         title={lead.name}
+        emphasizedTitle
         subtitle={lead.whatsappNumber}
         onSubtitlePress={
           lead.whatsappNumber
@@ -1273,7 +1274,7 @@ const styles = StyleSheet.create({
   preChatIconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   preChatTitle: { fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center", letterSpacing: -0.3 },
   preChatSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 22 },
-  createQuoteBtn: { flexDirection: "row", gap: 10, paddingHorizontal: 32, borderRadius: 16, marginTop: 8 },
+  createQuoteBtn: { flexDirection: "row", gap: 10, borderRadius: 16, marginTop: 8, width: "100%" },
   createInvoiceBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, width: "100%" },
   createInvoiceBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
