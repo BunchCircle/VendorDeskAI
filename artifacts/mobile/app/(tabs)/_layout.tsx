@@ -68,6 +68,10 @@ function NativeTabLayout() {
         <TabIcon sf={{ default: "list.bullet.rectangle", selected: "list.bullet.rectangle.fill" }} />
         <Label>Catalogue</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="dashboard">
+        <TabIcon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>Dashboard</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <TabIcon sf={{ default: "person.circle", selected: "person.circle.fill" }} />
         <Label>Profile</Label>
@@ -136,6 +140,16 @@ function ClassicTabLayout() {
           title: "Catalogue",
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name="package" color={color} focused={focused} />
+          ),
+        }}
+        listeners={{ tabPress: triggerTabHaptic }}
+      />
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: "Dashboard",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name="bar-chart-2" color={color} focused={focused} />
           ),
         }}
         listeners={{ tabPress: triggerTabHaptic }}
