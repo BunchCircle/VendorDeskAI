@@ -84,6 +84,15 @@ export default function QuotationPreviewScreen() {
 
   const grandTotal = afterDiscount + taxAmount;
 
+  const deriveDefaultTaxRate = (currentItems: QuotationItem[]): string => {
+    const rates = currentItems
+      .map((item) => item.taxRate)
+      .filter((r): r is number => r !== undefined);
+    if (rates.length === 0) return "";
+    const allSame = rates.every((r) => r === rates[0]);
+    return allSame ? rates[0].toString() : "";
+  };
+
   const handleSaveItem = (item: QuotationItem) => {
     setItems((prev) => {
       const idx = prev.findIndex((i) => i.id === item.id);
@@ -300,7 +309,11 @@ export default function QuotationPreviewScreen() {
             label="Tax"
             icon="percent"
             enabled={taxEnabled}
-            onToggle={(v) => { setTaxEnabled(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+            onToggle={(v) => {
+              setTaxEnabled(v);
+              if (v) setTaxRate(deriveDefaultTaxRate(items));
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
             colors={colors}
           />
           {taxEnabled && (
