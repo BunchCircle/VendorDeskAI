@@ -167,6 +167,7 @@ export async function getRemoteQuotations(): Promise<RemoteResult<Quotation[]>> 
       quoteNumber: d.quote_number,
       discount: d.discount ?? undefined,
       tax: d.tax ?? undefined,
+      status: d.status ?? undefined,
       createdAt: d.created_at,
     })),
   };
@@ -184,7 +185,13 @@ export async function upsertRemoteQuotation(quotation: Quotation): Promise<void>
     quote_number: quotation.quoteNumber,
     discount: quotation.discount ?? null,
     tax: quotation.tax ?? null,
+    status: quotation.status ?? null,
     created_at: quotation.createdAt,
   });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteRemoteQuotation(id: string): Promise<void> {
+  const { error } = await supabase.from("quotations").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }

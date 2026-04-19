@@ -42,6 +42,7 @@ import { supabase } from "../services/supabase";
 import {
   deleteRemoteLead,
   deleteRemoteProduct,
+  deleteRemoteQuotation,
   getRemoteLeads,
   getRemoteProducts,
   getRemoteQuotations,
@@ -118,6 +119,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const lastUserIdRef = useRef<string | null>(null);
   const isFlushing = useRef(false);
   const isOnlineRef = useRef(true);
+  const quotationsRef = useRef<Quotation[]>([]);
+
+  useEffect(() => {
+    quotationsRef.current = quotations;
+  }, [quotations]);
 
   const clearAppState = useCallback(() => {
     setOnboarded(false);
@@ -455,14 +461,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const updateQuotationStatus = useCallback(async (id: string, status: QuotationStatus) => {
     await storageUpdateQuotationStatus(id, status);
+    const existing = quotationsRef.current.find((q) => q.id === id);
+    const updatedQuotation = existing ? { ...existing, status } : undefined;
     setQuotations((prev) =>
       prev.map((q) => (q.id === id ? { ...q, status } : q))
     );
+    const userId = lastUserIdRef.current;
+    if (updatedQuotation) {
+      try {
+        await upsertRemoteQuotation(updatedQuotation);
+      } catch {
+        if (userId) {
+          await enqueue(userId, { type: "upsert", entity: "quotation", payload: updatedQuotation });
+        }
+      }
+    }
   }, []);
 
   const deleteQuotation = useCallback(async (id: string) => {
     await storageDeleteQuotation(id);
     setQuotations((prev) => prev.filter((q) => q.id !== id));
+    const userId = lastUserIdRef.current;
+    try {
+      await deleteRemoteQuotation(id);
+    } catch {
+      if (userId) {
+        await enqueue(userId, { type: "delete", entity: "quotation", payload: { id } });
+      }
+    }
   }, []);
 
   const getQuotationForLead = useCallback(

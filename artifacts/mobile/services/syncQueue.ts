@@ -3,6 +3,7 @@ import { Lead, Product, Quotation, VendorProfile } from "./storage";
 import {
   deleteRemoteLead,
   deleteRemoteProduct,
+  deleteRemoteQuotation,
   upsertRemoteLead,
   upsertRemoteProduct,
   upsertRemoteQuotation,
@@ -19,6 +20,7 @@ export type SyncOperation =
   | { type: "upsert"; entity: "lead"; payload: Lead }
   | { type: "delete"; entity: "lead"; payload: { id: string } }
   | { type: "upsert"; entity: "quotation"; payload: Quotation }
+  | { type: "delete"; entity: "quotation"; payload: { id: string } }
   | { type: "upsert"; entity: "vendorProfile"; payload: VendorProfile };
 
 export interface QueuedOperation {
@@ -141,7 +143,11 @@ async function executeOperation(operation: SyncOperation): Promise<void> {
       }
       break;
     case "quotation":
-      await upsertRemoteQuotation(operation.payload as Quotation);
+      if (operation.type === "upsert") {
+        await upsertRemoteQuotation(operation.payload as Quotation);
+      } else {
+        await deleteRemoteQuotation((operation.payload as { id: string }).id);
+      }
       break;
   }
 }
