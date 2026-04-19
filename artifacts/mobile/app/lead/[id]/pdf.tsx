@@ -17,11 +17,11 @@ import { Icon } from "@/components/Icon";
 import { AppHeader } from "@/components/AppHeader";
 import * as Haptics from "expo-haptics";
 import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { generateQuotationHTML } from "@/services/pdf";
+import { savePDFToDevice, shareViaWhatsApp } from "@/services/pdfActions";
 
 export default function PDFViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -92,17 +92,12 @@ export default function PDFViewerScreen() {
       setDownloading(false);
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (isAvailable) {
-      await Sharing.shareAsync(uri, {
-        mimeType: "application/pdf",
-        dialogTitle: `Quotation ${quotation.quoteNumber}`,
-        UTI: "com.adobe.pdf",
-      });
-      await updateLead({ ...lead, status: "PDF Shared" });
-    } else {
-      Alert.alert("Error", "Sharing is not available on this device.");
+    try {
+      const filename = `Quotation-${quotation.quoteNumber}.pdf`;
+      await savePDFToDevice(uri, filename);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert("Error", "Could not save PDF to device.");
     }
     setDownloading(false);
   };
@@ -126,14 +121,11 @@ export default function PDFViewerScreen() {
       return;
     }
     try {
-      await Sharing.shareAsync(uri, {
-        mimeType: "application/pdf",
-        dialogTitle: `Share quotation via WhatsApp`,
-        UTI: "com.adobe.pdf",
-      });
+      const message = `Hi ${lead.name}, please find your quotation ${quotation.quoteNumber} from ${vendorProfile?.businessName || "us"}.`;
+      await shareViaWhatsApp(uri, lead.whatsappNumber, message);
       await updateLead({ ...lead, status: "PDF Shared" });
     } catch {
-      Alert.alert("Error", "Could not open sharing dialog.");
+      Alert.alert("Error", "Could not open WhatsApp.");
     }
     setSharing(false);
   };

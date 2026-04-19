@@ -18,12 +18,12 @@ import { Icon } from "@/components/Icon";
 import { AppHeader } from "@/components/AppHeader";
 import * as Haptics from "expo-haptics";
 import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { generateInvoiceHTML } from "@/services/pdf";
 import { INDIAN_STATES, InvoiceStatus, computePerItemTaxData } from "@/services/storage";
+import { savePDFToDevice, shareViaWhatsApp } from "@/services/pdfActions";
 
 const STATUS_CONFIG = {
   draft: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Draft" },
@@ -107,19 +107,15 @@ export default function InvoicePDFScreen() {
       setDownloading(false);
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (isAvailable) {
-      await Sharing.shareAsync(uri, {
-        mimeType: "application/pdf",
-        dialogTitle: `Invoice ${invoice.invoiceNumber}`,
-        UTI: "com.adobe.pdf",
-      });
+    try {
+      const filename = `Invoice-${invoice.invoiceNumber}.pdf`;
+      await savePDFToDevice(uri, filename);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (invoice.status === "draft") {
         await updateInvoiceStatus(invoice.id, "sent");
       }
-    } else {
-      Alert.alert("Error", "Sharing is not available on this device.");
+    } catch {
+      Alert.alert("Error", "Could not save PDF to device.");
     }
     setDownloading(false);
   };
@@ -143,16 +139,13 @@ export default function InvoicePDFScreen() {
       return;
     }
     try {
-      await Sharing.shareAsync(uri, {
-        mimeType: "application/pdf",
-        dialogTitle: "Share Invoice via WhatsApp",
-        UTI: "com.adobe.pdf",
-      });
+      const message = `Hi ${lead.name}, please find your Tax Invoice ${invoice.invoiceNumber} from ${vendorProfile?.businessName || "us"}.`;
+      await shareViaWhatsApp(uri, lead.whatsappNumber, message);
       if (invoice.status === "draft") {
         await updateInvoiceStatus(invoice.id, "sent");
       }
     } catch {
-      Alert.alert("Error", "Could not open sharing dialog.");
+      Alert.alert("Error", "Could not open WhatsApp.");
     }
     setSharing(false);
   };
