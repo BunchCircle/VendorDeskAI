@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { LinearGradient } from "expo-linear-gradient";
 import { Icon } from "@/components/Icon";
 import { AppHeader } from "@/components/AppHeader";
@@ -192,11 +192,49 @@ function buildXlsx(
     ]),
   ];
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), "Summary");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(invoiceData), "Invoices");
+  function autoColWidths(data: (string | number)[][]): { wch: number }[] {
+    const widths: number[] = [];
+    data.forEach((row) => {
+      row.forEach((cell, c) => {
+        const len = String(cell ?? "").length;
+        widths[c] = Math.max(widths[c] ?? 8, len + 2);
+      });
+    });
+    return widths.map((w) => ({ wch: w }));
+  }
 
-  return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+  function boldHeaderRow(ws: XLSX.WorkSheet, colCount: number) {
+    for (let c = 0; c < colCount; c++) {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[ref]) ws[ref].s = { font: { bold: true } };
+    }
+  }
+
+  function applyCurrencyFormat(ws: XLSX.WorkSheet, rowIndices: number[], colIdx: number) {
+    rowIndices.forEach((r) => {
+      const ref = XLSX.utils.encode_cell({ r, c: colIdx });
+      if (ws[ref] && typeof ws[ref].v === "number") {
+        ws[ref].z = '#,##0.00';
+      }
+    });
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  wsSummary["!cols"] = autoColWidths(summaryData);
+  boldHeaderRow(wsSummary, summaryData[0].length);
+  applyCurrencyFormat(wsSummary, [6, 7, 8], 1);
+
+  const wsInvoices = XLSX.utils.aoa_to_sheet(invoiceData);
+  wsInvoices["!cols"] = autoColWidths(invoiceData);
+  boldHeaderRow(wsInvoices, invoiceData[0].length);
+  applyCurrencyFormat(wsInvoices, Array.from({ length: invoiceData.length - 1 }, (_, i) => i + 1), 5);
+
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+  XLSX.utils.book_append_sheet(wb, wsInvoices, "Invoices");
+
+  return XLSX.write(wb, { type: "base64", bookType: "xlsx", cellStyles: true });
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
