@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { generateInvoiceHTML } from "@/services/pdf";
-import { INDIAN_STATES, InvoiceStatus } from "@/services/storage";
+import { INDIAN_STATES, InvoiceStatus, computePerItemTaxData } from "@/services/storage";
 
 const STATUS_CONFIG = {
   draft: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Draft" },
@@ -65,7 +65,11 @@ export default function InvoicePDFScreen() {
 
   const afterDiscount = subtotal - discountAmount;
   const taxRate = invoice.tax?.enabled ? (invoice.tax.rate ?? 0) : 0;
-  const taxAmount = (afterDiscount * taxRate) / 100;
+  const perItemTaxData = computePerItemTaxData(invoice.items);
+  const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
+  const taxAmount = hasPerItemTaxes
+    ? perItemTaxData.totalTax
+    : invoice.tax?.enabled ? (afterDiscount * taxRate) / 100 : 0;
   const grandTotal = afterDiscount + taxAmount;
 
   const invoiceDate = new Date(invoice.invoiceDate).toLocaleDateString("en-IN", {

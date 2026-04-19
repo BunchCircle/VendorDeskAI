@@ -58,7 +58,7 @@ export default function InvoicePreviewScreen() {
   const [dueDate, setDueDate] = useState(existingInvoice?.dueDate || "");
   const [buyerGstin, setBuyerGstin] = useState(existingInvoice?.buyerGstin || "");
   const [placeOfSupply, setPlaceOfSupply] = useState(
-    existingInvoice?.placeOfSupply || "29"
+    existingInvoice?.placeOfSupply || ""
   );
   const [items, setItems] = useState<QuotationItem[]>(existingInvoice?.items || []);
   const [notes, setNotes] = useState(existingInvoice?.notes || "");
@@ -102,7 +102,7 @@ export default function InvoicePreviewScreen() {
     setInvoiceDate(existingInvoice.invoiceDate);
     setDueDate(existingInvoice.dueDate || "");
     setBuyerGstin(existingInvoice.buyerGstin || "");
-    setPlaceOfSupply(existingInvoice.placeOfSupply || "29");
+    setPlaceOfSupply(existingInvoice.placeOfSupply || "");
     setItems(existingInvoice.items);
     setNotes(existingInvoice.notes || "");
     setDiscountEnabled(existingInvoice.discount?.enabled ?? false);
@@ -131,7 +131,7 @@ export default function InvoicePreviewScreen() {
 
   const vendorStateCode = getVendorStateCode(vendorProfile?.gstNumber);
   const selectedState = INDIAN_STATES.find((s) => s.code === placeOfSupply);
-  const selectedStateName = selectedState ? `${selectedState.code} - ${selectedState.name}` : placeOfSupply;
+  const selectedStateName = selectedState ? `${selectedState.code} - ${selectedState.name}` : "";
 
   const isCgstSgst = vendorStateCode === placeOfSupply;
   const halfRate = taxRateNum / 2;
@@ -306,12 +306,15 @@ export default function InvoicePreviewScreen() {
                 onPress={() => setStatePickerVisible(true)}
                 activeOpacity={0.8}
               >
-                <Text style={{ color: colors.foreground, fontFamily: "Inter_400Regular", fontSize: 14, flex: 1 }} numberOfLines={1}>
-                  {selectedStateName}
+                <Text
+                  style={{ color: selectedStateName ? colors.foreground : colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 14, flex: 1 }}
+                  numberOfLines={1}
+                >
+                  {selectedStateName || "Select state…"}
                 </Text>
                 <Icon name="chevron-down" size={15} color={colors.mutedForeground} />
               </TouchableOpacity>
-              {vendorProfile?.gstNumber && (
+              {vendorProfile?.gstNumber && placeOfSupply && (
                 <Text style={[styles.hint, { color: isCgstSgst ? colors.success : colors.primary }]}>
                   {isCgstSgst ? "✓ Intra-state — CGST + SGST applies" : "↕ Inter-state — IGST applies"}
                 </Text>
