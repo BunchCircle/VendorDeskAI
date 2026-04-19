@@ -89,21 +89,60 @@ create table if not exists quotations (
   --  discount shape: { enabled, type: 'percent'|'flat', value }
   tax          jsonb,
   --  tax shape:     { enabled, label, rate }
+  status       text,
+  --  status values: 'draft' | 'sent' | 'approved'
   created_at   timestamptz not null default now()
 );
 
 
 -- =============================================================================
--- 5. INDEXES  (for faster per-user queries)
+-- 5. INVOICES
+--    One invoice per lead (upserted on save).
+--    items     → JSONB array of QuotationItem objects
+--    discount / tax / tax_split → JSONB objects
+-- =============================================================================
+create table if not exists invoices (
+  id                text        primary key,
+  user_id           uuid        not null references auth.users(id) on delete cascade,
+  lead_id           text        not null references leads(id) on delete cascade,
+  invoice_number    text        not null,
+  invoice_date      text        not null,
+  due_date          text,
+  items             jsonb       not null default '[]',
+  --  items row shape:
+  --  { id, name, quantity, unit, rate, hsnCode?, taxRate? }
+  notes             text,
+  discount          jsonb,
+  --  discount shape: { enabled, type: 'percent'|'flat', value }
+  tax               jsonb,
+  --  tax shape:     { enabled, label, rate }
+  buyer_gstin       text,
+  place_of_supply   text        not null,
+  tax_split         jsonb       not null,
+  --  tax_split shape: { type: 'cgst_sgst'|'igst', rate, cgstAmt?, sgstAmt?, igstAmt? }
+  status            text        not null default 'draft',
+  --  status values: 'draft' | 'sent' | 'paid'
+  created_at        timestamptz not null default now(),
+
+  constraint invoices_status_check check (
+    status in ('draft', 'sent', 'paid')
+  )
+);
+
+
+-- =============================================================================
+-- 6. INDEXES  (for faster per-user queries)
 -- =============================================================================
 create index if not exists products_user_id_idx     on products(user_id);
 create index if not exists leads_user_id_idx        on leads(user_id);
 create index if not exists quotations_user_id_idx   on quotations(user_id);
 create index if not exists quotations_lead_id_idx   on quotations(lead_id);
+create index if not exists invoices_user_id_idx     on invoices(user_id);
+create index if not exists invoices_lead_id_idx     on invoices(lead_id);
 
 
 -- =============================================================================
--- 6. ROW LEVEL SECURITY
+-- 7. ROW LEVEL SECURITY
 --    Every table is locked down so each user only sees their own data.
 -- =============================================================================
 
@@ -143,9 +182,18 @@ create policy "Users manage their own quotations"
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- invoices
+alter table invoices enable row level security;
+
+drop policy if exists "Users manage their own invoices" on invoices;
+create policy "Users manage their own invoices"
+  on invoices for all
+  using  (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 
 -- =============================================================================
--- 7. ADD MISSING COLUMNS  (run-safe patches for existing installations)
+-- 8. ADD MISSING COLUMNS  (run-safe patches for existing installations)
 --    If you already have the tables from a previous version, these ALTER
 --    statements add any columns that were introduced later without touching
 --    existing data.
@@ -155,8 +203,11 @@ alter table vendor_profiles add column if not exists updated_at  timestamptz not
 alter table products        add column if not exists hsn_code    text;
 alter table products        add column if not exists tax_rate    numeric;
 alter table products        add column if not exists updated_at  timestamptz not null default now();
+alter table quotations      add column if not exists status      text;
+alter table invoices        add column if not exists due_date    text;
+alter table invoices        add column if not exists buyer_gstin text;
 
 
 -- =============================================================================
--- Done!  All four tables are now created, indexed, and secured with RLS.
+-- Done!  All five tables are now created, indexed, and secured with RLS.
 -- =============================================================================
