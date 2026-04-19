@@ -1,21 +1,7 @@
 -- =============================================================================
--- VendorDesk.ai — Complete Supabase Schema  (fresh-install reference)
---
--- PURPOSE
---   This file represents the *current final state* of the schema and is safe
---   to run on a brand-new Supabase project via SQL Editor → New query.
---
--- AUTHORITATIVE CHANGE LOG
---   Incremental changes are tracked as numbered migration files:
---     supabase/migrations/001_initial_schema.sql
---     supabase/migrations/002_add_missing_columns.sql
---     …
---   Always add new schema changes there (not here) and then update this file
---   to match the new final state.  See README.md for the full workflow.
---
--- EXISTING INSTALLATIONS
---   Run only the migration files you haven't applied yet — they use
---   IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so they are safe to re-run.
+-- Migration 001 — Initial schema
+-- Tables: vendor_profiles, products, leads, quotations, invoices
+-- Indexes + Row Level Security for all tables
 -- =============================================================================
 
 -- Enable UUID helper (needed for gen_random_uuid on vendor_profiles)
@@ -27,16 +13,14 @@ create extension if not exists "pgcrypto";
 --    One row per authenticated user.  Stores business info shown on PDFs.
 -- =============================================================================
 create table if not exists vendor_profiles (
-  id            uuid        primary key default gen_random_uuid(),
-  user_id       uuid        not null references auth.users(id) on delete cascade,
-  business_name text        not null,
-  vendor_name   text        not null,
-  whatsapp_number text      not null,
-  email         text,
-  address       text,
-  gst_number    text,                           -- optional GST / TIN
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now(),
+  id              uuid        primary key default gen_random_uuid(),
+  user_id         uuid        not null references auth.users(id) on delete cascade,
+  business_name   text        not null,
+  vendor_name     text        not null,
+  whatsapp_number text        not null,
+  email           text,
+  address         text,
+  created_at      timestamptz not null default now(),
 
   constraint vendor_profiles_user_id_unique unique (user_id)
 );
@@ -52,8 +36,6 @@ create table if not exists products (
   name       text        not null,
   price      numeric(12, 2) not null,
   unit       text        not null,
-  hsn_code   text,                              -- optional HSN code (4–8 digits)
-  tax_rate   numeric,                           -- optional per-product tax rate (%)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -100,8 +82,6 @@ create table if not exists quotations (
   --  discount shape: { enabled, type: 'percent'|'flat', value }
   tax          jsonb,
   --  tax shape:     { enabled, label, rate }
-  status       text,
-  --  status values: 'draft' | 'sent' | 'approved'
   created_at   timestamptz not null default now()
 );
 
@@ -118,7 +98,6 @@ create table if not exists invoices (
   lead_id           text        not null references leads(id) on delete cascade,
   invoice_number    text        not null,
   invoice_date      text        not null,
-  due_date          text,
   items             jsonb       not null default '[]',
   --  items row shape:
   --  { id, name, quantity, unit, rate, hsnCode?, taxRate? }
@@ -127,7 +106,6 @@ create table if not exists invoices (
   --  discount shape: { enabled, type: 'percent'|'flat', value }
   tax               jsonb,
   --  tax shape:     { enabled, label, rate }
-  buyer_gstin       text,
   place_of_supply   text        not null,
   tax_split         jsonb       not null,
   --  tax_split shape: { type: 'cgst_sgst'|'igst', rate, cgstAmt?, sgstAmt?, igstAmt? }
@@ -201,13 +179,3 @@ create policy "Users manage their own invoices"
   on invoices for all
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
-
-
--- =============================================================================
--- Done!  All five tables are now created, indexed, and secured with RLS.
---
--- NOTE: Incremental schema changes (columns added after the initial release)
--- are tracked in supabase/migrations/.  Do NOT add patch ALTER statements
--- here — add a new numbered migration file instead and then update the
--- CREATE TABLE block above to reflect the new final state.
--- =============================================================================
