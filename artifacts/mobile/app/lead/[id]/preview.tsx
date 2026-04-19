@@ -96,12 +96,17 @@ export default function QuotationPreviewScreen() {
   const handleSaveItem = (item: QuotationItem) => {
     setItems((prev) => {
       const idx = prev.findIndex((i) => i.id === item.id);
+      let next: QuotationItem[];
       if (idx >= 0) {
-        const next = [...prev];
+        next = [...prev];
         next[idx] = item;
-        return next;
+      } else {
+        next = [...prev, item];
       }
-      return [...prev, item];
+      if (taxEnabled) {
+        setTaxRate(deriveDefaultTaxRate(next));
+      }
+      return next;
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -489,6 +494,7 @@ function ItemEditModal({
       unit: unit.trim() || "piece",
       rate: parseFloat(rate) || 0,
       hsnCode: item?.hsnCode,
+      taxRate: item?.taxRate,
     });
     onClose();
   };
