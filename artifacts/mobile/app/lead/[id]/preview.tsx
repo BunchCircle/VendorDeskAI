@@ -113,7 +113,13 @@ export default function QuotationPreviewScreen() {
 
   const handleDeleteItem = (itemId: string) => {
     const doDelete = () => {
-      setItems((prev) => prev.filter((i) => i.id !== itemId));
+      setItems((prev) => {
+        const next = prev.filter((i) => i.id !== itemId);
+        if (taxEnabled) {
+          setTaxRate(deriveDefaultTaxRate(next));
+        }
+        return next;
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     };
     if (Platform.OS === "web") {
