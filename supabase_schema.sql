@@ -43,7 +43,8 @@ create table if not exists products (
   unit       text        not null,
   hsn_code   text,                              -- optional HSN code (4–8 digits)
   tax_rate   numeric,                           -- optional per-product tax rate (%)
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 
@@ -153,6 +154,7 @@ alter table vendor_profiles add column if not exists gst_number  text;
 alter table vendor_profiles add column if not exists updated_at  timestamptz not null default now();
 alter table products        add column if not exists hsn_code    text;
 alter table products        add column if not exists tax_rate    numeric;
+alter table products        add column if not exists updated_at  timestamptz not null default now();
 
 
 -- =============================================================================
