@@ -54,6 +54,7 @@ import {
   QuotationItem,
   Invoice,
   InvoiceStatus,
+  QuotationStatus,
   computeTaxSplit,
   getVendorStateCode,
 } from "@/services/storage";
@@ -107,12 +108,21 @@ const INVOICE_STATUS_CONFIG: Record<InvoiceStatus, { bg: string; text: string; d
 
 const INVOICE_STATUS_ORDER: InvoiceStatus[] = ["draft", "sent", "paid"];
 
+const QUOTATION_STATUS_CONFIG: Record<QuotationStatus, { bg: string; text: string; dot: string; label: string }> = {
+  draft: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Draft" },
+  sent: { bg: "#DBEAFE", text: "#1E40AF", dot: "#2563EB", label: "Sent" },
+  approved: { bg: "#D1FAE5", text: "#065F46", dot: "#059669", label: "Approved" },
+};
+
+const QUOTATION_STATUS_ORDER: QuotationStatus[] = ["draft", "sent", "approved"];
+
 export default function QuotationWorkspaceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
     leads, products, addProduct, saveQuotation, updateLead,
     vendorProfile, invoices, saveInvoice,
-    updateInvoiceStatus, quotations,
+    updateInvoiceStatus, deleteInvoice, quotations,
+    updateQuotationStatus, deleteQuotation,
   } = useApp();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -131,6 +141,7 @@ export default function QuotationWorkspaceScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
   const [statusMenuFor, setStatusMenuFor] = useState<string | null>(null);
+  const [quotationStatusMenuFor, setQuotationStatusMenuFor] = useState<string | null>(null);
 
   const [addItemModal, setAddItemModal] = useState<{
     visible: boolean;
@@ -330,7 +341,7 @@ export default function QuotationWorkspaceScreen() {
       events.push({
         id: `quote-event-${q.id}`,
         role: "assistant",
-        content: `__EVENT_QUOTATION__|${q.id}|${q.quoteNumber}|${total}|${q.createdAt}`,
+        content: `__EVENT_QUOTATION__|${q.id}|${q.quoteNumber}|${total}|${q.createdAt}|${q.status ?? "draft"}`,
         timestamp: new Date(q.createdAt).getTime(),
       });
     }
@@ -669,6 +680,35 @@ export default function QuotationWorkspaceScreen() {
     setStatusMenuFor(null);
   };
 
+  const handleQuotationStatusChange = async (quotationId: string, status: QuotationStatus) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await updateQuotationStatus(quotationId, status);
+    setQuotationStatusMenuFor(null);
+  };
+
+  const handleDeleteDraftCard = (type: "quotation" | "invoice", recordId: string, messageId: string) => {
+    const label = type === "quotation" ? "quotation" : "invoice";
+    Alert.alert(
+      "Delete Draft",
+      `Delete this draft ${label}? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            if (type === "quotation") {
+              await deleteQuotation(recordId);
+            } else {
+              await deleteInvoice(recordId);
+            }
+            setMessages((prev) => prev.filter((m) => m.id !== messageId));
+          },
+        },
+      ]
+    );
+  };
+
   const handleAddItemSubmit = async () => {
     const { itemName, price, unit } = addItemModal;
     const parsedPrice = parseFloat(price) || 0;
@@ -721,8 +761,8 @@ export default function QuotationWorkspaceScreen() {
 
   const parseEventContent = (content: string) => {
     if (content.startsWith("__EVENT_QUOTATION__|")) {
-      const [, id, number, total, date] = content.split("|");
-      return { type: "quotation" as const, id, number, total: parseFloat(total), date };
+      const [, id, number, total, date, status] = content.split("|");
+      return { type: "quotation" as const, id, number, total: parseFloat(total), date, status: (status ?? "draft") as QuotationStatus };
     }
     if (content.startsWith("__EVENT_INVOICE__|")) {
       const [, id, number, total, date, status] = content.split("|");
@@ -737,6 +777,7 @@ export default function QuotationWorkspaceScreen() {
 
     if (ev.type === "quotation") {
       const dateStr = new Date(ev.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      const qStatusCfg = QUOTATION_STATUS_CONFIG[ev.status] || QUOTATION_STATUS_CONFIG.draft;
       const sendQuoteReminder = () => {
         if (!lead) return;
         const cleanNumber = lead.whatsappNumber.replace(/\D/g, "");
@@ -755,6 +796,24 @@ export default function QuotationWorkspaceScreen() {
               <View style={[styles.eventTypeBadge, { backgroundColor: colors.primaryLight }]}>
                 <Text style={[styles.eventTypeText, { color: colors.primary }]}>Quotation</Text>
               </View>
+              <TouchableOpacity
+                style={[styles.statusBadge, { backgroundColor: qStatusCfg.bg }]}
+                onPress={() => setQuotationStatusMenuFor(ev.id)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.statusDot, { backgroundColor: qStatusCfg.dot }]} />
+                <Text style={[styles.statusText, { color: qStatusCfg.text }]}>{qStatusCfg.label}</Text>
+                <Icon name="chevron-down" size={10} color={qStatusCfg.text} />
+              </TouchableOpacity>
+              {ev.status === "draft" && (
+                <TouchableOpacity
+                  style={styles.deleteCardBtn}
+                  onPress={() => handleDeleteDraftCard("quotation", ev.id, item.id)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="trash-2" size={14} color="#DC2626" />
+                </TouchableOpacity>
+              )}
             </View>
             <View style={styles.eventCardRow}>
               <Text style={[styles.eventCardDate, { color: colors.mutedForeground }]}>{dateStr}</Text>
@@ -813,6 +872,15 @@ export default function QuotationWorkspaceScreen() {
                 <Text style={[styles.statusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
                 <Icon name="chevron-down" size={10} color={statusCfg.text} />
               </TouchableOpacity>
+              {ev.status === "draft" && (
+                <TouchableOpacity
+                  style={styles.deleteCardBtn}
+                  onPress={() => handleDeleteDraftCard("invoice", ev.id, item.id)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="trash-2" size={14} color="#DC2626" />
+                </TouchableOpacity>
+              )}
             </View>
             <View style={styles.eventCardRow}>
               <Text style={[styles.eventCardDate, { color: colors.mutedForeground }]}>{dateStr}</Text>
@@ -1082,7 +1150,29 @@ export default function QuotationWorkspaceScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Invoice status menu (on-card) */}
+      {/* Quotation status menu (on-card) */}
+      <Modal visible={!!quotationStatusMenuFor} transparent animationType="fade">
+        <TouchableOpacity style={styles.statusMenuOverlay} activeOpacity={1} onPress={() => setQuotationStatusMenuFor(null)}>
+          <View style={[styles.statusMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.statusMenuTitle, { color: colors.mutedForeground }]}>Update Status</Text>
+            {QUOTATION_STATUS_ORDER.map((s) => {
+              const cfg = QUOTATION_STATUS_CONFIG[s];
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.statusMenuItem]}
+                  onPress={() => quotationStatusMenuFor ? handleQuotationStatusChange(quotationStatusMenuFor, s) : null}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: cfg.dot, width: 8, height: 8, borderRadius: 4 }]} />
+                  <Text style={[styles.statusMenuLabel, { color: colors.foreground }]}>{cfg.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal visible={!!statusMenuFor} transparent animationType="fade">
         <TouchableOpacity style={styles.statusMenuOverlay} activeOpacity={1} onPress={() => setStatusMenuFor(null)}>
           <View style={[styles.statusMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1249,6 +1339,7 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  deleteCardBtn: { padding: 4 },
   eventCardDate: { fontSize: 12, fontFamily: "Inter_400Regular", flex: 1 },
   eventCardTotal: { fontSize: 15, fontFamily: "Inter_700Bold" },
   eventCardBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, borderRadius: 8 },

@@ -13,6 +13,7 @@ import {
   Lead,
   Product,
   Quotation,
+  QuotationStatus,
   Invoice,
   InvoiceStatus,
   VendorProfile,
@@ -32,6 +33,8 @@ import {
   deleteLead as storageDeleteLead,
   deleteProduct as storageDeleteProduct,
   saveQuotation as storageSaveQuotation,
+  updateQuotationStatus as storageUpdateQuotationStatus,
+  deleteQuotation as storageDeleteQuotation,
   updateLead as storageUpdateLead,
   updateProduct as storageUpdateProduct,
 } from "../services/storage";
@@ -87,6 +90,8 @@ interface AppContextType {
   updateLead: (lead: Lead) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   saveQuotation: (quotation: Quotation) => Promise<void>;
+  updateQuotationStatus: (id: string, status: QuotationStatus) => Promise<void>;
+  deleteQuotation: (id: string) => Promise<void>;
   getQuotationForLead: (leadId: string) => Quotation | undefined;
   saveInvoice: (invoice: Invoice) => Promise<void>;
   updateInvoiceStatus: (id: string, status: InvoiceStatus) => Promise<void>;
@@ -448,6 +453,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateQuotationStatus = useCallback(async (id: string, status: QuotationStatus) => {
+    await storageUpdateQuotationStatus(id, status);
+    setQuotations((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, status } : q))
+    );
+  }, []);
+
+  const deleteQuotation = useCallback(async (id: string) => {
+    await storageDeleteQuotation(id);
+    setQuotations((prev) => prev.filter((q) => q.id !== id));
+  }, []);
+
   const getQuotationForLead = useCallback(
     (leadId: string) => quotations.find((q) => q.leadId === leadId),
     [quotations]
@@ -519,6 +536,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateLead,
         deleteLead,
         saveQuotation,
+        updateQuotationStatus,
+        deleteQuotation,
         getQuotationForLead,
         saveInvoice,
         updateInvoiceStatus,

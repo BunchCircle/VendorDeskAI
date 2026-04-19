@@ -40,6 +40,8 @@ export interface QuotationItem {
   taxRate?: number;
 }
 
+export type QuotationStatus = "draft" | "sent" | "approved";
+
 export interface Quotation {
   id: string;
   leadId: string;
@@ -49,6 +51,7 @@ export interface Quotation {
   quoteNumber: string;
   discount?: { enabled: boolean; type: "percent" | "flat"; value: number };
   tax?: { enabled: boolean; label: string; rate: number };
+  status?: QuotationStatus;
 }
 
 export type InvoiceStatus = "draft" | "sent" | "paid";
@@ -183,6 +186,26 @@ export async function getQuotationByLeadId(
 ): Promise<Quotation | null> {
   const quotations = await getQuotations();
   return quotations.find((q) => q.leadId === leadId) ?? null;
+}
+
+export async function updateQuotationStatus(
+  id: string,
+  status: QuotationStatus
+): Promise<void> {
+  const quotations = await getQuotations();
+  const idx = quotations.findIndex((q) => q.id === id);
+  if (idx >= 0) {
+    quotations[idx] = { ...quotations[idx], status };
+    await AsyncStorage.setItem(KEYS.QUOTATIONS, JSON.stringify(quotations));
+  }
+}
+
+export async function deleteQuotation(id: string): Promise<void> {
+  const quotations = await getQuotations();
+  await AsyncStorage.setItem(
+    KEYS.QUOTATIONS,
+    JSON.stringify(quotations.filter((q) => q.id !== id))
+  );
 }
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
