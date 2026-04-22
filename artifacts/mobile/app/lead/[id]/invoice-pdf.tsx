@@ -288,15 +288,15 @@ export default function InvoicePDFScreen() {
                 <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>Taxable Amt</Text>
                 {isCgstSgst ? (
                   <>
-                    <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>CGST {halfRate}%</Text>
-                    <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>SGST {halfRate}%</Text>
+                    <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>CGST{halfRate > 0 ? ` ${halfRate}%` : ""}</Text>
+                    <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>SGST{halfRate > 0 ? ` ${halfRate}%` : ""}</Text>
                   </>
                 ) : (
-                  <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>IGST {taxRate}%</Text>
+                  <Text style={[styles.taxCol, { color: colors.mutedForeground }]}>IGST{taxRate > 0 ? ` ${taxRate}%` : ""}</Text>
                 )}
               </View>
               <View style={[styles.taxRow, { borderTopColor: colors.border }]}>
-                <Text style={[styles.taxCol, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{taxRate}%</Text>
+                <Text style={[styles.taxCol, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{taxRate > 0 ? `${taxRate}%` : "—"}</Text>
                 <Text style={[styles.taxCol, { color: colors.foreground }]}>₹{afterDiscount.toLocaleString("en-IN")}</Text>
                 {isCgstSgst ? (
                   <>
@@ -323,11 +323,11 @@ export default function InvoicePDFScreen() {
               {invoiceTaxEnabled && taxAmount > 0 && (
                 isCgstSgst ? (
                   <>
-                    <SummaryRow label={`CGST (${halfRate}%)`} value={`+₹${(taxAmount / 2).toLocaleString("en-IN")}`} colors={colors} />
-                    <SummaryRow label={`SGST (${halfRate}%)`} value={`+₹${(taxAmount / 2).toLocaleString("en-IN")}`} colors={colors} />
+                    <SummaryRow label={halfRate > 0 ? `CGST (${halfRate}%)` : "CGST"} value={`+₹${(taxAmount / 2).toLocaleString("en-IN")}`} colors={colors} />
+                    <SummaryRow label={halfRate > 0 ? `SGST (${halfRate}%)` : "SGST"} value={`+₹${(taxAmount / 2).toLocaleString("en-IN")}`} colors={colors} />
                   </>
                 ) : (
-                  <SummaryRow label={`IGST (${taxRate}%)`} value={`+₹${taxAmount.toLocaleString("en-IN")}`} colors={colors} />
+                  <SummaryRow label={taxRate > 0 ? `IGST (${taxRate}%)` : "IGST"} value={`+₹${taxAmount.toLocaleString("en-IN")}`} colors={colors} />
                 )
               )}
             </View>
