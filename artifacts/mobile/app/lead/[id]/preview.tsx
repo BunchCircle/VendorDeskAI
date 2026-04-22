@@ -51,6 +51,7 @@ export default function QuotationPreviewScreen() {
   const [discountValue, setDiscountValue] = useState(existingQuotation?.discount?.value?.toString() ?? "");
   const [taxEnabled, setTaxEnabled] = useState(existingQuotation?.taxEnabled ?? true);
   const [itemTaxRateInputs, setItemTaxRateInputs] = useState<Record<string, string>>({});
+  const [focusedTaxItemId, setFocusedTaxItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (existingQuotation) {
@@ -80,12 +81,13 @@ export default function QuotationPreviewScreen() {
     if (!taxEnabled) return items;
     return items.map((item) => {
       if (item.taxRate != null) return item;
+      if (focusedTaxItemId === item.id) return item;
       const raw = itemTaxRateInputs[item.id];
       if (raw === undefined) return item;
       const parsed = parseFloat(raw);
       return { ...item, taxRate: isFinite(parsed) && parsed >= 0 ? parsed : undefined };
     });
-  }, [items, taxEnabled, itemTaxRateInputs]);
+  }, [items, taxEnabled, itemTaxRateInputs, focusedTaxItemId]);
 
   const perItemTaxData = useMemo(
     () => (taxEnabled ? computePerItemTaxData(effectiveItems) : { slabs: [], totalTax: 0 }),
@@ -99,12 +101,13 @@ export default function QuotationPreviewScreen() {
       taxEnabled
         ? items.filter((item) => {
             if (item.taxRate != null) return false;
+            if (focusedTaxItemId === item.id) return true;
             const raw = itemTaxRateInputs[item.id] ?? "";
             const n = parseFloat(raw);
             return !(raw.trim() !== "" && isFinite(n) && n >= 0);
           })
         : [],
-    [items, taxEnabled, itemTaxRateInputs]
+    [items, taxEnabled, itemTaxRateInputs, focusedTaxItemId]
   );
   const canGeneratePDF = itemsMissingRate.length === 0;
 
@@ -257,6 +260,8 @@ export default function QuotationPreviewScreen() {
                         onChangeText={(v) =>
                           setItemTaxRateInputs((prev) => ({ ...prev, [item.id]: v }))
                         }
+                        onFocus={() => setFocusedTaxItemId(item.id)}
+                        onBlur={() => setFocusedTaxItemId(null)}
                         placeholder="e.g. 18"
                         placeholderTextColor={colors.mutedForeground}
                         keyboardType="decimal-pad"
