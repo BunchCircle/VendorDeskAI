@@ -160,16 +160,39 @@ export default function QuotationWorkspaceScreen() {
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const webRecognitionRef = useRef<{ stop(): void } | null>(null);
+  const webTranscriptRef = useRef<string>("");
+  const nativeSpeechSentRef = useRef(false);
+  const nativeSpeechErrorRef = useRef(false);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const MAX_RECORD_SECS = 30;
 
-  useSpeechRecognitionEvent("start", () => setIsListening(true));
-  useSpeechRecognitionEvent("end", () => setIsListening(false));
-  useSpeechRecognitionEvent("result", (event) => {
-    const transcript = event.results[0]?.transcript || "";
-    if (transcript) setInput(transcript);
+  useSpeechRecognitionEvent("start", () => {
+    nativeSpeechSentRef.current = false;
+    nativeSpeechErrorRef.current = false;
+    setIsListening(true);
   });
-  useSpeechRecognitionEvent("error", () => setIsListening(false));
+  useSpeechRecognitionEvent("end", () => {
+    setIsListening(false);
+    if (!nativeSpeechSentRef.current && !nativeSpeechErrorRef.current) {
+      addMessage({ role: "assistant", content: "Couldn't understand. Please try again or type your requirement." });
+    }
+  });
+  useSpeechRecognitionEvent("result", (event) => {
+    const result = event.results[0];
+    const transcript = result?.[0]?.transcript || "";
+    if (transcript) {
+      if (result?.isFinal) {
+        nativeSpeechSentRef.current = true;
+        handleSend(transcript);
+      } else {
+        setInput(transcript);
+      }
+    }
+  });
+  useSpeechRecognitionEvent("error", () => {
+    nativeSpeechErrorRef.current = true;
+    setIsListening(false);
+  });
 
   useEffect(() => {
     return () => {
@@ -230,14 +253,31 @@ export default function QuotationWorkspaceScreen() {
       recognition.lang = "en-IN";
       recognition.interimResults = true;
       recognition.continuous = false;
+      let webSpeechError = false;
       recognition.onstart = () => setIsListening(true);
-      recognition.onend = () => setIsListening(false);
+      recognition.onend = () => {
+        setIsListening(false);
+        const transcript = webTranscriptRef.current;
+        webTranscriptRef.current = "";
+        if (transcript) {
+          handleSend(transcript);
+        } else if (!webSpeechError) {
+          addMessage({ role: "assistant", content: "Couldn't understand. Please try again or type your requirement." });
+        }
+      };
       recognition.onresult = (event) => {
         const results = event.results;
         const transcript = results[results.length - 1][0].transcript;
-        if (transcript) setInput(transcript);
+        if (transcript) {
+          webTranscriptRef.current = transcript;
+          setInput(transcript);
+        }
       };
-      recognition.onerror = () => setIsListening(false);
+      recognition.onerror = () => {
+        webSpeechError = true;
+        webTranscriptRef.current = "";
+        setIsListening(false);
+      };
       webRecognitionRef.current = recognition;
       recognition.start();
       return;
@@ -281,7 +321,7 @@ export default function QuotationWorkspaceScreen() {
         const text = await transcribeAudio(base64, "audio/m4a");
         setIsTranscribing(false);
         if (text) {
-          setInput(text);
+          handleSend(text);
         } else {
           addMessage({ role: "assistant", content: "Couldn't understand the audio. Please try again or type your requirement." });
         }
