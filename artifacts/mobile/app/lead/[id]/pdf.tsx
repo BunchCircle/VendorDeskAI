@@ -54,15 +54,18 @@ export default function PDFViewerScreen() {
 
   const afterDiscount = subtotal - discountAmount;
 
-  // Per-item GST from catalogue taxRate, grouped by slab
+  // Per-item GST from catalogue taxRate, grouped by slab — suppressed when taxEnabled is false
+  const taxApplied = quotation.taxEnabled !== false;
   const perItemSlabMap = new Map<number, { taxableAmt: number; taxAmt: number }>();
-  for (const item of quotation.items) {
-    const r = item.taxRate || 0;
-    if (r <= 0) continue;
-    const taxableAmt = item.quantity * item.rate;
-    const taxAmt = (taxableAmt * r) / 100;
-    const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
-    perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+  if (taxApplied) {
+    for (const item of quotation.items) {
+      const r = item.taxRate || 0;
+      if (r <= 0) continue;
+      const taxableAmt = item.quantity * item.rate;
+      const taxAmt = (taxableAmt * r) / 100;
+      const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
+      perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+    }
   }
   const perItemSlabs = Array.from(perItemSlabMap.entries())
     .sort((a, b) => a[0] - b[0])
@@ -267,7 +270,11 @@ export default function PDFViewerScreen() {
                   colors={colors}
                 />
               )}
-              {hasPerItemTaxes ? (
+              {!taxApplied ? (
+                <Text style={[styles.noTaxNote, { color: colors.mutedForeground }]}>
+                  Tax not applicable
+                </Text>
+              ) : hasPerItemTaxes ? (
                 perItemSlabs.map((slab) => (
                   <React.Fragment key={slab.rate}>
                     <SummaryRow

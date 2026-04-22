@@ -64,12 +64,18 @@ export default function InvoicePDFScreen() {
   })();
 
   const afterDiscount = subtotal - discountAmount;
-  const taxRate = invoice.tax?.enabled ? (invoice.tax.rate ?? 0) : 0;
+  // Use the new taxEnabled field; fall back to tax.enabled for backward compat
+  const invoiceTaxEnabled = invoice.taxEnabled !== false && invoice.tax?.enabled !== false;
+  const taxRate = invoice.tax?.rate ?? 0;
   const perItemTaxData = computePerItemTaxData(invoice.items);
   const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
-  const taxAmount = hasPerItemTaxes
-    ? perItemTaxData.totalTax
-    : invoice.tax?.enabled ? (afterDiscount * taxRate) / 100 : 0;
+  // Respect 0% items: use per-item total whenever any item has an explicit taxRate
+  const hasExplicitItemRates = invoiceTaxEnabled && invoice.items.some((item) => item.taxRate != null);
+  const taxAmount = !invoiceTaxEnabled
+    ? 0
+    : hasExplicitItemRates
+      ? perItemTaxData.totalTax
+      : (afterDiscount * taxRate) / 100;
   const grandTotal = afterDiscount + taxAmount;
 
   const invoiceDate = new Date(invoice.invoiceDate).toLocaleDateString("en-IN", {
@@ -274,7 +280,7 @@ export default function InvoicePDFScreen() {
           </View>
 
           {/* Tax Breakdown */}
-          {invoice.tax?.enabled && taxAmount > 0 && (
+          {invoiceTaxEnabled && taxAmount > 0 && (
             <View style={[styles.taxBreakdown, { borderColor: colors.border }]}>
               <Text style={[styles.taxBreakdownTitle, { color: colors.mutedForeground }]}>Tax Summary</Text>
               <View style={styles.taxRow}>
@@ -311,7 +317,10 @@ export default function InvoicePDFScreen() {
               {invoice.discount?.enabled && discountAmount > 0 && (
                 <SummaryRow label="Discount" value={`–₹${discountAmount.toLocaleString("en-IN")}`} valueColor={colors.destructive} colors={colors} />
               )}
-              {invoice.tax?.enabled && taxAmount > 0 && (
+              {!invoiceTaxEnabled && (
+                <SummaryRow label="Tax" value="Not applicable" valueColor={colors.mutedForeground} colors={colors} />
+              )}
+              {invoiceTaxEnabled && taxAmount > 0 && (
                 isCgstSgst ? (
                   <>
                     <SummaryRow label={`CGST (${halfRate}%)`} value={`+₹${(taxAmount / 2).toLocaleString("en-IN")}`} colors={colors} />

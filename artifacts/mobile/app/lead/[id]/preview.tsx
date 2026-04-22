@@ -49,6 +49,8 @@ export default function QuotationPreviewScreen() {
   const [discountEnabled, setDiscountEnabled] = useState(existingQuotation?.discount?.enabled ?? false);
   const [discountType, setDiscountType] = useState<DiscountType>(existingQuotation?.discount?.type ?? "percent");
   const [discountValue, setDiscountValue] = useState(existingQuotation?.discount?.value?.toString() ?? "");
+  const [taxEnabled, setTaxEnabled] = useState(existingQuotation?.taxEnabled ?? true);
+  const [itemTaxRateInputs, setItemTaxRateInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (existingQuotation) {
@@ -59,6 +61,7 @@ export default function QuotationPreviewScreen() {
         setDiscountType(existingQuotation.discount.type);
         setDiscountValue(existingQuotation.discount.value.toString());
       }
+      setTaxEnabled(existingQuotation.taxEnabled ?? true);
     }
   }, [existingQuotation]);
 
@@ -73,9 +76,37 @@ export default function QuotationPreviewScreen() {
 
   const afterDiscount = subtotal - discountAmount;
 
-  const perItemTaxData = useMemo(() => computePerItemTaxData(items), [items]);
+  const effectiveItems = useMemo(() => {
+    if (!taxEnabled) return items;
+    return items.map((item) => {
+      if (item.taxRate != null) return item;
+      const raw = itemTaxRateInputs[item.id];
+      if (raw === undefined) return item;
+      const parsed = parseFloat(raw);
+      return { ...item, taxRate: isFinite(parsed) && parsed >= 0 ? parsed : undefined };
+    });
+  }, [items, taxEnabled, itemTaxRateInputs]);
+
+  const perItemTaxData = useMemo(
+    () => (taxEnabled ? computePerItemTaxData(effectiveItems) : { slabs: [], totalTax: 0 }),
+    [effectiveItems, taxEnabled]
+  );
   const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
-  const taxAmount = hasPerItemTaxes ? perItemTaxData.totalTax : 0;
+  const taxAmount = taxEnabled ? perItemTaxData.totalTax : 0;
+
+  const itemsMissingRate = useMemo(
+    () =>
+      taxEnabled
+        ? items.filter((item) => {
+            if (item.taxRate != null) return false;
+            const raw = itemTaxRateInputs[item.id] ?? "";
+            const n = parseFloat(raw);
+            return !(raw.trim() !== "" && isFinite(n) && n >= 0);
+          })
+        : [],
+    [items, taxEnabled, itemTaxRateInputs]
+  );
+  const canGeneratePDF = itemsMissingRate.length === 0;
 
   const grandTotal = afterDiscount + taxAmount;
 
@@ -110,13 +141,14 @@ export default function QuotationPreviewScreen() {
   const buildUpdatedQuotation = (): Quotation =>
     sanitizeQuotation({
       ...existingQuotation!,
-      items,
+      items: effectiveItems,
       notes,
       discount: {
         enabled: discountEnabled,
         type: discountType,
         value: parseFloat(discountValue) || 0,
       },
+      taxEnabled,
     });
 
   const handleCreatePDF = async () => {
@@ -191,49 +223,70 @@ export default function QuotationPreviewScreen() {
             <View style={{ width: 56 }} />
           </LinearGradient>
 
-          {items.map((item, idx) => (
-            <View
-              key={item.id}
-              style={[
-                styles.itemRow,
-                {
-                  backgroundColor: idx % 2 === 0 ? colors.card : colors.surfaceElevated,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-            >
-              <View style={styles.colItem}>
-                <Text style={[styles.itemText, { color: colors.foreground }]} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                {!!item.hsnCode && (
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                    HSN: {item.hsnCode}
+          {items.map((item, idx) => {
+            const isMissingRate = itemsMissingRate.some((m) => m.id === item.id);
+            return (
+              <View
+                key={item.id}
+                style={[
+                  styles.itemRow,
+                  {
+                    backgroundColor: idx % 2 === 0 ? colors.card : colors.surfaceElevated,
+                    borderBottomColor: colors.border,
+                    borderLeftWidth: isMissingRate ? 3 : 0,
+                    borderLeftColor: colors.warning,
+                    flexWrap: "wrap",
+                  },
+                ]}
+              >
+                <View style={styles.colItem}>
+                  <Text style={[styles.itemText, { color: colors.foreground }]} numberOfLines={1}>
+                    {item.name}
                   </Text>
-                )}
+                  {!!item.hsnCode && (
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                      HSN: {item.hsnCode}
+                    </Text>
+                  )}
+                  {isMissingRate && (
+                    <View style={styles.inlineTaxRow}>
+                      <Text style={[styles.inlineTaxLabel, { color: colors.warning }]}>Tax %</Text>
+                      <TextInput
+                        style={[styles.inlineTaxInput, { borderColor: colors.warning, color: colors.foreground, backgroundColor: colors.muted }]}
+                        value={itemTaxRateInputs[item.id] ?? ""}
+                        onChangeText={(v) =>
+                          setItemTaxRateInputs((prev) => ({ ...prev, [item.id]: v }))
+                        }
+                        placeholder="e.g. 18"
+                        placeholderTextColor={colors.mutedForeground}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.colQty, styles.itemText, { color: colors.foreground, textAlign: "center" }]}>
+                  {item.quantity} {item.unit}
+                </Text>
+                <Text style={[styles.colRate, styles.itemText, { color: colors.foreground, textAlign: "right" }]}>
+                  ₹{item.rate.toLocaleString("en-IN")}
+                </Text>
+                <Text style={[styles.colTotal, styles.itemText, { color: colors.foreground, textAlign: "right", fontFamily: "Inter_600SemiBold" }]}>
+                  ₹{(item.quantity * item.rate).toLocaleString("en-IN")}
+                </Text>
+                <View style={styles.rowActions}>
+                  <TouchableOpacity
+                    onPress={() => { setEditingItem(item); setEditModalVisible(true); }}
+                    activeOpacity={0.7}
+                  >
+                    <Icon name="edit-2" size={14} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteItem(item.id)} activeOpacity={0.7}>
+                    <Icon name="trash-2" size={14} color={colors.destructive} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Text style={[styles.colQty, styles.itemText, { color: colors.foreground, textAlign: "center" }]}>
-                {item.quantity} {item.unit}
-              </Text>
-              <Text style={[styles.colRate, styles.itemText, { color: colors.foreground, textAlign: "right" }]}>
-                ₹{item.rate.toLocaleString("en-IN")}
-              </Text>
-              <Text style={[styles.colTotal, styles.itemText, { color: colors.foreground, textAlign: "right", fontFamily: "Inter_600SemiBold" }]}>
-                ₹{(item.quantity * item.rate).toLocaleString("en-IN")}
-              </Text>
-              <View style={styles.rowActions}>
-                <TouchableOpacity
-                  onPress={() => { setEditingItem(item); setEditModalVisible(true); }}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="edit-2" size={14} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDeleteItem(item.id)} activeOpacity={0.7}>
-                  <Icon name="trash-2" size={14} color={colors.destructive} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
 
           <TouchableOpacity
             style={[styles.addItemRow, { borderColor: colors.border }]}
@@ -285,43 +338,62 @@ export default function QuotationPreviewScreen() {
             </View>
           )}
 
-          {hasPerItemTaxes && (
+          <View style={[styles.toggleDivider, { backgroundColor: colors.border }]} />
+          <ToggleRow
+            label="Apply Tax"
+            icon="percent"
+            enabled={taxEnabled}
+            onToggle={(v) => { setTaxEnabled(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+            colors={colors}
+          />
+          {taxEnabled && (
             <>
-              <View style={[styles.toggleDivider, { backgroundColor: colors.border }]} />
-              <View style={[styles.toggleRow, { paddingVertical: 6 }]}>
-                <View style={styles.toggleRowLeft}>
-                  <View style={[styles.toggleIcon, { backgroundColor: colors.primaryLight }]}>
-                    <Icon name="percent" size={15} color={colors.primary} />
-                  </View>
-                  <View>
-                    <Text style={[styles.toggleLabel, { color: colors.foreground }]}>GST</Text>
-                    <Text style={[styles.miniLabel, { color: colors.mutedForeground, marginTop: 1 }]}>
-                      Auto from catalogue
+              {hasPerItemTaxes ? (
+                <>
+                  <View style={[styles.toggleRow, { paddingVertical: 4 }]}>
+                    <View style={styles.toggleRowLeft}>
+                      <View style={{ width: 34 }} />
+                      <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
+                        Auto from catalogue
+                      </Text>
+                    </View>
+                    <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>
+                      ₹{taxAmount.toLocaleString("en-IN")}
                     </Text>
                   </View>
+                  {perItemTaxData.slabs.map((slab) => (
+                    <View key={slab.rate} style={[styles.toggleDetail, { paddingTop: 4 }]}>
+                      <View style={styles.slabRow}>
+                        <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
+                          {slab.rate}% slab — taxable ₹{slab.taxableAmt.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                      <View style={[styles.slabRow, { marginTop: 2 }]}>
+                        <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
+                          GST ({slab.rate}%)
+                        </Text>
+                        <Text style={{ color: colors.foreground, fontFamily: "Inter_500Medium", fontSize: 13 }}>
+                          ₹{slab.taxAmt.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </>
+              ) : itemsMissingRate.length > 0 ? (
+                <View style={[styles.toggleDetail, { paddingTop: 4 }]}>
+                  <Text style={[styles.miniLabel, { color: colors.warning }]}>
+                    Enter tax rate for {itemsMissingRate.length} item{itemsMissingRate.length > 1 ? "s" : ""} above to continue
+                  </Text>
                 </View>
-                <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>
-                  ₹{taxAmount.toLocaleString("en-IN")}
-                </Text>
-              </View>
-              {perItemTaxData.slabs.map((slab) => (
-                <View key={slab.rate} style={[styles.toggleDetail, { paddingTop: 4 }]}>
-                  <View style={styles.slabRow}>
-                    <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
-                      {slab.rate}% slab — taxable ₹{slab.taxableAmt.toLocaleString("en-IN")}
-                    </Text>
-                  </View>
-                  <View style={[styles.slabRow, { marginTop: 2 }]}>
-                    <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
-                      GST ({slab.rate}%)
-                    </Text>
-                    <Text style={{ color: colors.foreground, fontFamily: "Inter_500Medium", fontSize: 13 }}>
-                      ₹{slab.taxAmt.toLocaleString("en-IN")}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+              ) : null}
             </>
+          )}
+          {!taxEnabled && (
+            <View style={[styles.toggleDetail, { paddingTop: 4 }]}>
+              <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13, fontStyle: "italic" }}>
+                Tax not applicable
+              </Text>
+            </View>
           )}
         </View>
 
@@ -342,7 +414,7 @@ export default function QuotationPreviewScreen() {
               </Text>
             </View>
           )}
-          {hasPerItemTaxes && perItemTaxData.slabs.map((slab) => (
+          {taxEnabled && hasPerItemTaxes && perItemTaxData.slabs.map((slab) => (
             <View key={slab.rate} style={styles.totalRow}>
               <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>
                 GST ({slab.rate}%)
@@ -352,6 +424,13 @@ export default function QuotationPreviewScreen() {
               </Text>
             </View>
           ))}
+          {!taxEnabled && (
+            <View style={styles.totalRow}>
+              <Text style={[styles.totalLabel, { color: colors.mutedForeground, fontStyle: "italic" }]}>
+                Tax not applicable
+              </Text>
+            </View>
+          )}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.totalRow}>
             <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
@@ -388,11 +467,12 @@ export default function QuotationPreviewScreen() {
         ]}
       >
         <GradientButton
-          label="Create PDF"
+          label={!canGeneratePDF ? `Enter tax rate for ${itemsMissingRate.length} item${itemsMissingRate.length > 1 ? "s" : ""}` : "Create PDF"}
           onPress={handleCreatePDF}
           iconName="file-text"
           size="lg"
           style={styles.createPdfBtn}
+          disabled={!canGeneratePDF}
         />
       </View>
 
@@ -593,6 +673,9 @@ const styles = StyleSheet.create({
   },
   miniLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", marginBottom: 4, letterSpacing: 0.3, textTransform: "uppercase" },
   computedHint: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  inlineTaxRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  inlineTaxLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  inlineTaxInput: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, fontFamily: "Inter_400Regular", width: 72 },
   totalsSection: {
     borderRadius: 16,
     padding: 16,

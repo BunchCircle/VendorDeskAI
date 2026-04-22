@@ -50,6 +50,7 @@ export interface Quotation {
   createdAt: string;
   quoteNumber: string;
   discount?: { enabled: boolean; type: "percent" | "flat"; value: number };
+  taxEnabled?: boolean;
   status?: QuotationStatus;
 }
 
@@ -73,6 +74,7 @@ export interface Invoice {
   notes?: string;
   discount?: { enabled: boolean; type: "percent" | "flat"; value: number };
   tax?: { enabled: boolean; label: string; rate: number };
+  taxEnabled?: boolean;
   buyerGstin?: string;
   placeOfSupply: string;
   taxSplit: TaxSplit;

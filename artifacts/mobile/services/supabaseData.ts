@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import {
+  Invoice,
   Lead,
   Product,
   Quotation,
@@ -170,6 +171,7 @@ export async function getRemoteQuotations(): Promise<RemoteResult<Quotation[]>> 
         discount: d.discount ?? undefined,
         status: d.status ?? undefined,
         createdAt: d.created_at,
+        taxEnabled: d.tax?.enabled != null ? Boolean(d.tax.enabled) : undefined,
       })
     ),
   };
@@ -186,6 +188,9 @@ export async function upsertRemoteQuotation(quotation: Quotation): Promise<void>
     notes: quotation.notes ?? null,
     quote_number: quotation.quoteNumber,
     discount: quotation.discount ?? null,
+    // Persist taxEnabled inside the existing tax JSONB column (no schema change needed).
+    // sanitizeQuotation reads it back as taxEnabled on load.
+    tax: quotation.taxEnabled !== undefined ? { enabled: quotation.taxEnabled } : null,
     status: quotation.status ?? null,
     created_at: quotation.createdAt,
   });
@@ -194,5 +199,70 @@ export async function upsertRemoteQuotation(quotation: Quotation): Promise<void>
 
 export async function deleteRemoteQuotation(id: string): Promise<void> {
   const { error } = await supabase.from("quotations").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+export async function getRemoteInvoices(): Promise<RemoteResult<Invoice[]>> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: true, data: [] };
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at");
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: (data ?? []).map((d) => ({
+      id: d.id,
+      leadId: d.lead_id,
+      invoiceNumber: d.invoice_number,
+      invoiceDate: d.invoice_date,
+      dueDate: d.due_date ?? undefined,
+      items: d.items ?? [],
+      notes: d.notes ?? undefined,
+      discount: d.discount ?? undefined,
+      // tax column stores legacy tax object; extract taxEnabled from it for compat
+      tax: d.tax ? { enabled: d.tax.enabled ?? true, label: d.tax.label ?? "GST", rate: d.tax.rate ?? 0 } : undefined,
+      taxEnabled: d.tax?.enabled != null ? Boolean(d.tax.enabled) : undefined,
+      buyerGstin: d.buyer_gstin ?? undefined,
+      placeOfSupply: d.place_of_supply,
+      taxSplit: d.tax_split,
+      status: (d.status ?? "draft") as Invoice["status"],
+      createdAt: d.created_at,
+    })),
+  };
+}
+
+export async function upsertRemoteInvoice(invoice: Invoice): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase.from("invoices").upsert({
+    id: invoice.id,
+    user_id: user.id,
+    lead_id: invoice.leadId,
+    invoice_number: invoice.invoiceNumber,
+    invoice_date: invoice.invoiceDate,
+    due_date: invoice.dueDate ?? null,
+    items: invoice.items,
+    notes: invoice.notes ?? null,
+    discount: invoice.discount ?? null,
+    // Persist taxEnabled inside existing tax JSONB — no schema change needed.
+    tax: invoice.taxEnabled !== undefined
+      ? { ...(invoice.tax ?? {}), enabled: invoice.taxEnabled }
+      : (invoice.tax ?? null),
+    buyer_gstin: invoice.buyerGstin ?? null,
+    place_of_supply: invoice.placeOfSupply,
+    tax_split: invoice.taxSplit,
+    status: invoice.status,
+    created_at: invoice.createdAt,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteRemoteInvoice(id: string): Promise<void> {
+  const { error } = await supabase.from("invoices").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }

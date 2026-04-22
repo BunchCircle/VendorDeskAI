@@ -21,15 +21,18 @@ export function generateQuotationHTML(
 
   const afterDiscount = subtotal - discountAmount;
 
-  // Per-item GST from catalogue taxRate, grouped by slab
+  // Per-item GST from catalogue taxRate, grouped by slab — suppressed when taxEnabled is false
+  const taxApplied = quotation.taxEnabled !== false;
   const perItemSlabMap = new Map<number, { taxableAmt: number; taxAmt: number }>();
-  for (const item of quotation.items) {
-    const r = item.taxRate || 0;
-    if (r <= 0) continue;
-    const taxableAmt = item.quantity * item.rate;
-    const taxAmt = (taxableAmt * r) / 100;
-    const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
-    perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+  if (taxApplied) {
+    for (const item of quotation.items) {
+      const r = item.taxRate || 0;
+      if (r <= 0) continue;
+      const taxableAmt = item.quantity * item.rate;
+      const taxAmt = (taxableAmt * r) / 100;
+      const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
+      perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+    }
   }
   const perItemSlabs = Array.from(perItemSlabMap.entries())
     .sort((a, b) => a[0] - b[0])
@@ -64,12 +67,14 @@ export function generateQuotationHTML(
     ? `<div class="total-row"><span class="total-label">Discount (${quotation.discount.type === "percent" ? `${quotation.discount.value}%` : "flat"})</span><span class="total-amount" style="color:#E53935">-${formatCurrency(discountAmount)}</span></div>`
     : "";
 
-  const taxSummaryRows = hasPerItemTaxes
-    ? perItemSlabs.map(
-        (slab) =>
-          `<div class="total-row"><span class="total-label">GST (${slab.rate}%)</span><span class="total-amount">+${formatCurrency(slab.taxAmt)}</span></div>`
-      ).join("")
-    : `<div class="total-row"><span class="total-label" style="font-style:italic;color:#B0BEC5">Quotation without Taxes</span></div>`;
+  const taxSummaryRows = !taxApplied
+    ? `<div class="total-row"><span class="total-label" style="font-style:italic;color:#B0BEC5">Tax not applicable</span></div>`
+    : hasPerItemTaxes
+      ? perItemSlabs.map(
+          (slab) =>
+            `<div class="total-row"><span class="total-label">GST (${slab.rate}%)</span><span class="total-amount">+${formatCurrency(slab.taxAmt)}</span></div>`
+        ).join("")
+      : `<div class="total-row"><span class="total-label" style="font-style:italic;color:#B0BEC5">Quotation without Taxes</span></div>`;
 
   const gstBreakdownTable = hasPerItemTaxes ? `
   <table class="gst-table">
@@ -193,24 +198,30 @@ export function generateInvoiceHTML(
   const afterDiscount = subtotal - discountAmount;
 
   // Per-item GST (from catalogue taxRate) takes priority over the global rate
+  // Suppressed when taxEnabled is false OR when the legacy tax.enabled flag is false
+  const invoiceTaxApplied = invoice.taxEnabled !== false && invoice.tax?.enabled !== false;
   const perItemSlabMap = new Map<number, { taxableAmt: number; taxAmt: number }>();
-  for (const item of invoice.items) {
-    const r = item.taxRate || 0;
-    if (r <= 0) continue;
-    const taxableAmt = item.quantity * item.rate;
-    const taxAmt = (taxableAmt * r) / 100;
-    const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
-    perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+  if (invoiceTaxApplied) {
+    for (const item of invoice.items) {
+      const r = item.taxRate || 0;
+      if (r <= 0) continue;
+      const taxableAmt = item.quantity * item.rate;
+      const taxAmt = (taxableAmt * r) / 100;
+      const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
+      perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+    }
   }
   const hasPerItemTaxes = perItemSlabMap.size > 0;
   const perItemSlabs = Array.from(perItemSlabMap.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([rate, { taxableAmt, taxAmt }]) => ({ rate, taxableAmt, taxAmt }));
 
-  const taxRate = invoice.tax?.enabled ? (invoice.tax.rate ?? 0) : 0;
-  const taxAmount = hasPerItemTaxes
-    ? perItemSlabs.reduce((s, slab) => s + slab.taxAmt, 0)
-    : (afterDiscount * taxRate) / 100;
+  const taxRate = invoiceTaxApplied && invoice.tax?.enabled ? (invoice.tax.rate ?? 0) : 0;
+  const taxAmount = !invoiceTaxApplied
+    ? 0
+    : hasPerItemTaxes
+      ? perItemSlabs.reduce((s, slab) => s + slab.taxAmt, 0)
+      : (afterDiscount * taxRate) / 100;
   const grandTotal = afterDiscount + taxAmount;
 
   const invoiceDate = new Date(invoice.invoiceDate).toLocaleDateString("en-IN", {
@@ -404,7 +415,9 @@ export function generateInvoiceHTML(
     <tbody>${itemRows}</tbody>
   </table>
 
-  ${taxAmount > 0 ? `
+  ${!invoiceTaxApplied ? `
+  <div style="padding:8px 0;font-size:12px;font-style:italic;color:#B0BEC5">Tax not applicable</div>` : ""}
+  ${invoiceTaxApplied && taxAmount > 0 ? `
   <table class="tax-table">
     <thead>
       <tr>
@@ -429,7 +442,8 @@ export function generateInvoiceHTML(
     <div>
       <div class="summary-row"><span style="color:#555">Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
       ${invoice.discount?.enabled && discountAmount > 0 ? `<div class="summary-row"><span style="color:#E53935">Discount</span><span style="color:#E53935">-${formatCurrency(discountAmount)}</span></div>` : ""}
-      ${taxAmount > 0 ? (hasPerItemTaxes ? (isCgstSgst ? `
+      ${!invoiceTaxApplied ? `<div class="summary-row"><span style="color:#B0BEC5;font-style:italic">Tax not applicable</span><span></span></div>` : ""}
+      ${invoiceTaxApplied && taxAmount > 0 ? (hasPerItemTaxes ? (isCgstSgst ? `
         <div class="summary-row"><span style="color:#555">CGST</span><span>${formatCurrency(taxAmount / 2)}</span></div>
         <div class="summary-row"><span style="color:#555">SGST</span><span>${formatCurrency(taxAmount / 2)}</span></div>
       ` : `

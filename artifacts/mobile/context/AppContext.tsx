@@ -40,13 +40,16 @@ import {
 } from "../services/storage";
 import { supabase } from "../services/supabase";
 import {
+  deleteRemoteInvoice,
   deleteRemoteLead,
   deleteRemoteProduct,
   deleteRemoteQuotation,
+  getRemoteInvoices,
   getRemoteLeads,
   getRemoteProducts,
   getRemoteQuotations,
   getRemoteVendorProfile,
+  upsertRemoteInvoice,
   upsertRemoteLead,
   upsertRemoteProduct,
   upsertRemoteQuotation,
@@ -120,10 +123,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const isFlushing = useRef(false);
   const isOnlineRef = useRef(true);
   const quotationsRef = useRef<Quotation[]>([]);
+  const invoicesRef = useRef<Invoice[]>([]);
 
   useEffect(() => {
     quotationsRef.current = quotations;
   }, [quotations]);
+
+  useEffect(() => {
+    invoicesRef.current = invoices;
+  }, [invoices]);
 
   const clearAppState = useCallback(() => {
     setOnboarded(false);
@@ -151,11 +159,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const syncFromSupabase = useCallback(async () => {
-    const [profileResult, prodsResult, leadsResult, quotsResult] = await Promise.all([
+    const [profileResult, prodsResult, leadsResult, quotsResult, invsResult] = await Promise.all([
       getRemoteVendorProfile(),
       getRemoteProducts(),
       getRemoteLeads(),
       getRemoteQuotations(),
+      getRemoteInvoices(),
     ]);
 
     if (profileResult.ok) {
@@ -181,6 +190,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (quotsResult.ok) {
       await AsyncStorage.setItem("quotations", JSON.stringify(quotsResult.data));
       setQuotations(quotsResult.data);
+    }
+
+    if (invsResult.ok) {
+      await AsyncStorage.setItem("invoices", JSON.stringify(invsResult.data));
+      setInvoices(invsResult.data);
     }
   }, []);
 
@@ -507,18 +521,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return [...prev, invoice];
     });
+    const userId = lastUserIdRef.current;
+    try {
+      await upsertRemoteInvoice(invoice);
+    } catch {
+      if (userId) {
+        await enqueue(userId, { type: "upsert", entity: "invoice", payload: invoice });
+      }
+    }
   }, []);
 
   const updateInvoiceStatus = useCallback(async (id: string, status: InvoiceStatus) => {
     await storageUpdateInvoiceStatus(id, status);
+    const existing = invoicesRef.current.find((inv) => inv.id === id);
+    const updatedInvoice = existing ? { ...existing, status } : undefined;
     setInvoices((prev) =>
       prev.map((inv) => (inv.id === id ? { ...inv, status } : inv))
     );
+    const userId = lastUserIdRef.current;
+    if (updatedInvoice) {
+      try {
+        await upsertRemoteInvoice(updatedInvoice);
+      } catch {
+        if (userId) {
+          await enqueue(userId, { type: "upsert", entity: "invoice", payload: updatedInvoice });
+        }
+      }
+    }
   }, []);
 
   const deleteInvoice = useCallback(async (id: string) => {
     await storageDeleteInvoice(id);
     setInvoices((prev) => prev.filter((inv) => inv.id !== id));
+    const userId = lastUserIdRef.current;
+    try {
+      await deleteRemoteInvoice(id);
+    } catch {
+      if (userId) {
+        await enqueue(userId, { type: "delete", entity: "invoice", payload: { id } });
+      }
+    }
   }, []);
 
   const getInvoicesForLead = useCallback(
@@ -529,8 +571,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshAll = useCallback(async () => {
     const { data: { session: s } } = await supabase.auth.getSession();
     await loadAll(s);
-    const invs = await getInvoices();
-    setInvoices(invs);
+    // Sync invoices from Supabase on refresh; fall back to local cache only on error
+    const remoteInvs = await getRemoteInvoices();
+    if (remoteInvs.ok) {
+      await AsyncStorage.setItem("invoices", JSON.stringify(remoteInvs.data));
+      setInvoices(remoteInvs.data);
+    } else {
+      const invs = await getInvoices();
+      setInvoices(invs);
+    }
   }, [loadAll]);
 
   const logout = useCallback(async () => {

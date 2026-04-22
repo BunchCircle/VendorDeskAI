@@ -1,9 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Lead, Product, Quotation, VendorProfile } from "./storage";
+import { Invoice, Lead, Product, Quotation, VendorProfile } from "./storage";
 import {
+  deleteRemoteInvoice,
   deleteRemoteLead,
   deleteRemoteProduct,
   deleteRemoteQuotation,
+  upsertRemoteInvoice,
   upsertRemoteLead,
   upsertRemoteProduct,
   upsertRemoteQuotation,
@@ -21,6 +23,8 @@ export type SyncOperation =
   | { type: "delete"; entity: "lead"; payload: { id: string } }
   | { type: "upsert"; entity: "quotation"; payload: Quotation }
   | { type: "delete"; entity: "quotation"; payload: { id: string } }
+  | { type: "upsert"; entity: "invoice"; payload: Invoice }
+  | { type: "delete"; entity: "invoice"; payload: { id: string } }
   | { type: "upsert"; entity: "vendorProfile"; payload: VendorProfile };
 
 export interface QueuedOperation {
@@ -147,6 +151,13 @@ async function executeOperation(operation: SyncOperation): Promise<void> {
         await upsertRemoteQuotation(operation.payload as Quotation);
       } else {
         await deleteRemoteQuotation((operation.payload as { id: string }).id);
+      }
+      break;
+    case "invoice":
+      if (operation.type === "upsert") {
+        await upsertRemoteInvoice(operation.payload as Invoice);
+      } else {
+        await deleteRemoteInvoice((operation.payload as { id: string }).id);
       }
       break;
   }

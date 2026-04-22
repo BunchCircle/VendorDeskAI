@@ -72,15 +72,52 @@ export default function InvoicePreviewScreen() {
   const [discountType, setDiscountType] = useState<DiscountType>(existingInvoice?.discount?.type ?? "percent");
   const [discountValue, setDiscountValue] = useState(existingInvoice?.discount?.value?.toString() ?? "");
 
-  const [taxEnabled, setTaxEnabled] = useState(existingInvoice?.tax?.enabled ?? false);
+  const [taxEnabled, setTaxEnabled] = useState(
+    existingInvoice?.taxEnabled ?? existingInvoice?.tax?.enabled ?? true
+  );
   const [taxRate, setTaxRate] = useState(existingInvoice?.tax?.rate?.toString() ?? "18");
+  const [itemTaxRateInputs, setItemTaxRateInputs] = useState<Record<string, string>>({});
 
   // Only a brand-new invoice (no invoiceId param) needs a generated number.
   const [isGeneratingNumber, setIsGeneratingNumber] = useState(!invoiceId && !existingInvoice);
 
+  const effectiveItems = useMemo(() => {
+    if (!taxEnabled) return items;
+    return items.map((item) => {
+      if (item.taxRate != null) return item;
+      const raw = itemTaxRateInputs[item.id];
+      if (raw === undefined) return item;
+      const parsed = parseFloat(raw);
+      return { ...item, taxRate: isFinite(parsed) && parsed >= 0 ? parsed : undefined };
+    });
+  }, [items, taxEnabled, itemTaxRateInputs]);
+
   // Per-item GST from catalogue (overrides the manual toggle when items have taxRate)
-  const perItemTaxData = useMemo(() => computePerItemTaxData(items), [items]);
+  const perItemTaxData = useMemo(
+    () => (taxEnabled ? computePerItemTaxData(effectiveItems) : { slabs: [], totalTax: 0 }),
+    [effectiveItems, taxEnabled]
+  );
   const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
+  // True when at least one effective item has an explicitly set taxRate (even 0%)
+  // Used to distinguish "per-item rates apply" from "use manual rate fallback"
+  const hasExplicitItemRates = useMemo(
+    () => taxEnabled && effectiveItems.some((item) => item.taxRate != null),
+    [effectiveItems, taxEnabled]
+  );
+
+  const itemsMissingRate = useMemo(
+    () =>
+      taxEnabled
+        ? items.filter((item) => {
+            if (item.taxRate != null) return false;
+            const raw = itemTaxRateInputs[item.id] ?? "";
+            const n = parseFloat(raw);
+            return !(raw.trim() !== "" && isFinite(n) && n >= 0);
+          })
+        : [],
+    [items, taxEnabled, itemTaxRateInputs]
+  );
+  const canSave = itemsMissingRate.length === 0;
 
   useEffect(() => {
     // Only generate a new number when this is a brand-new invoice (no invoiceId param).
@@ -108,7 +145,7 @@ export default function InvoicePreviewScreen() {
     setDiscountEnabled(existingInvoice.discount?.enabled ?? false);
     setDiscountType(existingInvoice.discount?.type ?? "percent");
     setDiscountValue(existingInvoice.discount?.value?.toString() ?? "");
-    setTaxEnabled(existingInvoice.tax?.enabled ?? false);
+    setTaxEnabled(existingInvoice.taxEnabled ?? existingInvoice.tax?.enabled ?? true);
     setTaxRate(existingInvoice.tax?.rate?.toString() ?? "18");
   }, [existingInvoice?.id]);
 
@@ -123,10 +160,15 @@ export default function InvoicePreviewScreen() {
 
   const afterDiscount = subtotal - discountAmount;
   const taxRateNum = parseFloat(taxRate) || 0;
-  // When catalogue items have taxRate, use per-item computation; fall back to manual toggle rate
-  const taxAmount = hasPerItemTaxes
-    ? perItemTaxData.totalTax
-    : taxEnabled ? (afterDiscount * taxRateNum) / 100 : 0;
+  // When tax is enabled: use per-item computation when any item has an explicit taxRate
+  // (even 0%), otherwise fall back to the manual rate toggle.
+  // When missing rates are present, show ₹0 so the preview totals don't show a
+  // provisional manual-rate value while the user is still filling in required rates.
+  const taxAmount = !taxEnabled || itemsMissingRate.length > 0
+    ? 0
+    : hasExplicitItemRates
+      ? perItemTaxData.totalTax
+      : (afterDiscount * taxRateNum) / 100;
   const grandTotal = afterDiscount + taxAmount;
 
   const vendorStateCode = getVendorStateCode(vendorProfile?.gstNumber);
@@ -168,25 +210,28 @@ export default function InvoicePreviewScreen() {
   };
 
   const buildInvoice = (): Invoice => {
-    const taxSplit = hasPerItemTaxes
+    const taxSplit = taxEnabled && hasExplicitItemRates
       ? computeTaxSplitFromAmount(perItemTaxData.totalTax, vendorStateCode, placeOfSupply)
-      : computeTaxSplit(taxRateNum, afterDiscount, vendorStateCode, placeOfSupply);
+      : taxEnabled
+        ? computeTaxSplit(taxRateNum, afterDiscount, vendorStateCode, placeOfSupply)
+        : { type: "igst" as const, rate: 0, igstAmt: 0 };
     return {
       id: existingInvoice?.id || generateId(),
       leadId: leadId!,
       invoiceNumber,
       invoiceDate,
       dueDate: dueDate || undefined,
-      items,
+      items: effectiveItems,
       notes: notes || undefined,
       discount: {
         enabled: discountEnabled,
         type: discountType,
         value: parseFloat(discountValue) || 0,
       },
-      tax: hasPerItemTaxes
-        ? { enabled: true, label: isCgstSgst ? "CGST+SGST" : "IGST", rate: 0 }
+      tax: hasExplicitItemRates
+        ? { enabled: taxEnabled, label: isCgstSgst ? "CGST+SGST" : "IGST", rate: 0 }
         : { enabled: taxEnabled, label: isCgstSgst ? "CGST+SGST" : "IGST", rate: taxRateNum },
+      taxEnabled,
       buyerGstin: buyerGstin.trim() || undefined,
       placeOfSupply,
       taxSplit,
@@ -203,6 +248,13 @@ export default function InvoicePreviewScreen() {
     }
     if (items.length === 0) {
       Alert.alert("No Items", "Please add at least one item to the invoice.");
+      return;
+    }
+    if (!canSave) {
+      Alert.alert(
+        "Missing Tax Rates",
+        `Please enter a tax rate for ${itemsMissingRate.length} item${itemsMissingRate.length > 1 ? "s" : ""} highlighted above, or turn off the Apply Tax toggle.`
+      );
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -333,41 +385,61 @@ export default function InvoicePreviewScreen() {
             <View style={{ width: 56 }} />
           </LinearGradient>
 
-          {items.map((item, idx) => (
-            <View
-              key={item.id}
-              style={[styles.itemRow, {
-                backgroundColor: idx % 2 === 0 ? colors.card : colors.surfaceElevated,
-                borderBottomColor: colors.border,
-              }]}
-            >
-              <View style={styles.colItem}>
-                <Text style={[styles.itemText, { color: colors.foreground }]} numberOfLines={1}>{item.name}</Text>
-                {!!item.hsnCode && (
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                    HSN: {item.hsnCode}
-                  </Text>
-                )}
+          {items.map((item, idx) => {
+            const isMissingRate = itemsMissingRate.some((m) => m.id === item.id);
+            return (
+              <View
+                key={item.id}
+                style={[styles.itemRow, {
+                  backgroundColor: idx % 2 === 0 ? colors.card : colors.surfaceElevated,
+                  borderBottomColor: colors.border,
+                  borderLeftWidth: isMissingRate ? 3 : 0,
+                  borderLeftColor: colors.warning,
+                }]}
+              >
+                <View style={styles.colItem}>
+                  <Text style={[styles.itemText, { color: colors.foreground }]} numberOfLines={1}>{item.name}</Text>
+                  {!!item.hsnCode && (
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                      HSN: {item.hsnCode}
+                    </Text>
+                  )}
+                  {isMissingRate && (
+                    <View style={styles.inlineTaxRow}>
+                      <Text style={[styles.inlineTaxLabel, { color: colors.warning }]}>Tax %</Text>
+                      <TextInput
+                        style={[styles.inlineTaxInput, { borderColor: colors.warning, color: colors.foreground, backgroundColor: colors.muted }]}
+                        value={itemTaxRateInputs[item.id] ?? ""}
+                        onChangeText={(v) =>
+                          setItemTaxRateInputs((prev) => ({ ...prev, [item.id]: v }))
+                        }
+                        placeholder="e.g. 18"
+                        placeholderTextColor={colors.mutedForeground}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.colQty, styles.itemText, { color: colors.foreground, textAlign: "center" }]}>
+                  {item.quantity} {item.unit}
+                </Text>
+                <Text style={[styles.colRate, styles.itemText, { color: colors.foreground, textAlign: "right" }]}>
+                  ₹{item.rate.toLocaleString("en-IN")}
+                </Text>
+                <Text style={[styles.colTotal, styles.itemText, { color: colors.foreground, textAlign: "right", fontFamily: "Inter_600SemiBold" }]}>
+                  ₹{(item.quantity * item.rate).toLocaleString("en-IN")}
+                </Text>
+                <View style={styles.rowActions}>
+                  <TouchableOpacity onPress={() => { setEditingItem(item); setEditModalVisible(true); }} activeOpacity={0.7}>
+                    <Icon name="edit-2" size={14} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteItem(item.id)} activeOpacity={0.7}>
+                    <Icon name="trash-2" size={14} color={colors.destructive} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Text style={[styles.colQty, styles.itemText, { color: colors.foreground, textAlign: "center" }]}>
-                {item.quantity} {item.unit}
-              </Text>
-              <Text style={[styles.colRate, styles.itemText, { color: colors.foreground, textAlign: "right" }]}>
-                ₹{item.rate.toLocaleString("en-IN")}
-              </Text>
-              <Text style={[styles.colTotal, styles.itemText, { color: colors.foreground, textAlign: "right", fontFamily: "Inter_600SemiBold" }]}>
-                ₹{(item.quantity * item.rate).toLocaleString("en-IN")}
-              </Text>
-              <View style={styles.rowActions}>
-                <TouchableOpacity onPress={() => { setEditingItem(item); setEditModalVisible(true); }} activeOpacity={0.7}>
-                  <Icon name="edit-2" size={14} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDeleteItem(item.id)} activeOpacity={0.7}>
-                  <Icon name="trash-2" size={14} color={colors.destructive} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
 
           <TouchableOpacity
             style={[styles.addItemRow, { borderColor: colors.border, backgroundColor: colors.card }]}
@@ -424,21 +496,37 @@ export default function InvoicePreviewScreen() {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          {hasPerItemTaxes ? (
+          {/* ── Apply Tax master toggle ── */}
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleLeft}>
+              <View style={[styles.toggleIcon, { backgroundColor: taxEnabled ? colors.primaryLight : colors.muted }]}>
+                <Icon name="percent" size={15} color={taxEnabled ? colors.primary : colors.mutedForeground} />
+              </View>
+              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Apply Tax</Text>
+            </View>
+            <Switch
+              value={taxEnabled}
+              onValueChange={(v) => { setTaxEnabled(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+              trackColor={{ false: colors.muted, true: colors.primaryLight }}
+              thumbColor={taxEnabled ? colors.primary : colors.mutedForeground}
+            />
+          </View>
+
+          {!taxEnabled && (
+            <View style={[styles.toggleDetail, { paddingBottom: 8 }]}>
+              <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13, fontStyle: "italic" }}>
+                Tax not applicable
+              </Text>
+            </View>
+          )}
+
+          {taxEnabled && hasPerItemTaxes && (
             /* ── Auto-computed GST from catalogue taxRate ── */
             <>
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleLeft}>
-                  <View style={[styles.toggleIcon, { backgroundColor: colors.primaryLight }]}>
-                    <Icon name="percent" size={15} color={colors.primary} />
-                  </View>
-                  <View>
-                    <Text style={[styles.toggleLabel, { color: colors.foreground }]}>GST</Text>
-                    <Text style={[styles.miniLabel, { color: colors.mutedForeground, marginTop: 1 }]}>
-                      Auto from catalogue
-                    </Text>
-                  </View>
-                </View>
+              <View style={[styles.toggleDetail, { paddingTop: 4, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
+                <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
+                  Auto from catalogue
+                </Text>
                 <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>
                   ₹{taxAmount.toLocaleString("en-IN")}
                 </Text>
@@ -475,24 +563,19 @@ export default function InvoicePreviewScreen() {
                 );
               })}
             </>
-          ) : (
-            /* ── Manual GST toggle (fallback when items have no taxRate) ── */
+          )}
+
+          {taxEnabled && !hasExplicitItemRates && (
+            /* ── Manual GST rate when no items have an explicit catalogue taxRate ── */
             <>
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleLeft}>
-                  <View style={[styles.toggleIcon, { backgroundColor: taxEnabled ? colors.primaryLight : colors.muted }]}>
-                    <Icon name="percent" size={15} color={taxEnabled ? colors.primary : colors.mutedForeground} />
-                  </View>
-                  <Text style={[styles.toggleLabel, { color: colors.foreground }]}>GST</Text>
+              {itemsMissingRate.length > 0 && (
+                <View style={[styles.toggleDetail, { paddingTop: 4 }]}>
+                  <Text style={[styles.miniLabel, { color: colors.warning }]}>
+                    Enter tax rate for {itemsMissingRate.length} item{itemsMissingRate.length > 1 ? "s" : ""} above to continue
+                  </Text>
                 </View>
-                <Switch
-                  value={taxEnabled}
-                  onValueChange={(v) => { setTaxEnabled(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                  trackColor={{ false: colors.muted, true: colors.primaryLight }}
-                  thumbColor={taxEnabled ? colors.primary : colors.mutedForeground}
-                />
-              </View>
-              {taxEnabled && (
+              )}
+              {itemsMissingRate.length === 0 && (
                 <View style={styles.toggleDetail}>
                   <View style={styles.row}>
                     <View style={{ flex: 1 }}>
@@ -544,7 +627,14 @@ export default function InvoicePreviewScreen() {
               <Text style={[styles.totalValue, { color: colors.destructive }]}>–₹{discountAmount.toLocaleString("en-IN")}</Text>
             </View>
           )}
-          {taxAmount > 0 && (
+          {!taxEnabled && (
+            <View style={styles.totalRow}>
+              <Text style={[styles.totalLabel, { color: colors.mutedForeground, fontStyle: "italic" }]}>
+                Tax not applicable
+              </Text>
+            </View>
+          )}
+          {taxEnabled && taxAmount > 0 && (
             hasPerItemTaxes ? (
               isCgstSgst ? (
                 <>
@@ -563,7 +653,7 @@ export default function InvoicePreviewScreen() {
                   <Text style={[styles.totalValue, { color: colors.foreground }]}>+₹{taxAmount.toLocaleString("en-IN")}</Text>
                 </View>
               )
-            ) : taxEnabled ? (
+            ) : (
               isCgstSgst ? (
                 <>
                   <View style={styles.totalRow}>
@@ -581,7 +671,7 @@ export default function InvoicePreviewScreen() {
                   <Text style={[styles.totalValue, { color: colors.foreground }]}>+₹{taxAmount.toLocaleString("en-IN")}</Text>
                 </View>
               )
-            ) : null
+            )
           )}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.totalRow}>
@@ -606,12 +696,12 @@ export default function InvoicePreviewScreen() {
 
       <View style={[styles.footer, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 8) }]}>
         <GradientButton
-          label={isGeneratingNumber ? "Generating Number…" : "Save & Preview Invoice"}
+          label={isGeneratingNumber ? "Generating Number…" : !canSave ? `Enter tax rate for ${itemsMissingRate.length} item${itemsMissingRate.length > 1 ? "s" : ""}` : "Save & Preview Invoice"}
           onPress={handleSave}
           iconName="file-text"
           size="lg"
           style={{ flex: 1 }}
-          disabled={isGeneratingNumber}
+          disabled={isGeneratingNumber || !canSave}
         />
       </View>
 
@@ -818,6 +908,9 @@ const styles = StyleSheet.create({
   typeBtnText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   toggleInput: { borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontFamily: "Inter_400Regular" },
   miniLabel: { fontSize: 11, fontFamily: "Inter_500Medium", marginBottom: 4 },
+  inlineTaxRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  inlineTaxLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  inlineTaxInput: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, fontFamily: "Inter_400Regular", width: 72 },
   divider: { height: 1, marginHorizontal: 14 },
   totalRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8 },
   totalLabel: { fontSize: 14, fontFamily: "Inter_400Regular" },
