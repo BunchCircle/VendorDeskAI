@@ -583,7 +583,7 @@ export default function QuotationWorkspaceScreen() {
     if (!lead || invoiceItems.length === 0) return;
     const num = await generateInvoiceNumber();
     const vendorStateCode = getVendorStateCode(vendorProfile?.gstNumber);
-    const defaultPlaceOfSupply = "29";
+    const defaultPlaceOfSupply = "";
     const subtotal = invoiceItems.reduce((s, i) => s + i.quantity * i.rate, 0);
     const taxSplit = computeTaxSplit(0, subtotal, vendorStateCode, defaultPlaceOfSupply);
     const invoice: Invoice = {
@@ -638,7 +638,7 @@ export default function QuotationWorkspaceScreen() {
       }
       const num = await generateInvoiceNumber();
       const vendorStateCode = getVendorStateCode(vendorProfile?.gstNumber);
-      const defaultPlaceOfSupply = "29";
+      const defaultPlaceOfSupply = "";
       const subtotal = existing.items.reduce((s, i) => s + i.quantity * i.rate, 0);
       const d = existing.discount;
       const discAmt = d?.enabled ? (d.type === "percent" ? (subtotal * d.value) / 100 : Math.min(d.value, subtotal)) : 0;
