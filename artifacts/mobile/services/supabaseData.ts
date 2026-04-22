@@ -120,6 +120,7 @@ export async function getRemoteLeads(): Promise<RemoteResult<Lead[]>> {
       whatsappNumber: d.whatsapp_number,
       whatsappSameAsPhone: d.whatsapp_same_as_phone ?? false,
       email: d.email ?? undefined,
+      gstNumber: d.gst_number ?? undefined,
       status: d.status as Lead["status"],
       createdAt: d.created_at,
     })),
@@ -137,6 +138,7 @@ export async function upsertRemoteLead(lead: Lead): Promise<void> {
     whatsapp_number: lead.whatsappNumber,
     whatsapp_same_as_phone: lead.whatsappSameAsPhone ?? false,
     email: lead.email ?? null,
+    gst_number: lead.gstNumber ?? null,
     status: lead.status,
     created_at: lead.createdAt,
   });

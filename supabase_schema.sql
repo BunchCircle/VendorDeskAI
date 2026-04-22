@@ -71,6 +71,7 @@ create table if not exists leads (
   whatsapp_number       text        not null,
   whatsapp_same_as_phone boolean   not null default false,
   email                 text,
+  gst_number            text,                              -- optional buyer GSTIN
   status                text        not null default 'Pending',
                                     -- values: 'Pending' | 'Quote Created' | 'PDF Shared'
   created_at            timestamptz not null default now(),
@@ -211,3 +212,11 @@ create policy "Users manage their own invoices"
 -- here — add a new numbered migration file instead and then update the
 -- CREATE TABLE block above to reflect the new final state.
 -- =============================================================================
+
+
+-- =============================================================================
+-- MIGRATIONS — safe to re-run on existing installations
+-- =============================================================================
+
+-- Add buyer GST number to leads (task-63)
+alter table leads add column if not exists gst_number text;

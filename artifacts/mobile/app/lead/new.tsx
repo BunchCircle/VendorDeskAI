@@ -190,6 +190,7 @@ export default function NewLeadScreen() {
   const [showWaPicker, setShowWaPicker] = useState(false);
 
   const [email, setEmail] = useState("");
+  const [gstNumber, setGstNumber] = useState("");
   const [saving, setSaving] = useState(false);
 
   const fullPhone = phoneNumber.trim()
@@ -218,6 +219,7 @@ export default function NewLeadScreen() {
       whatsappNumber: fullWhatsApp,
       whatsappSameAsPhone: whatsappSame,
       email: email.trim() || undefined,
+      gstNumber: gstNumber.trim() || undefined,
       status: "Pending",
     });
     setSaving(false);
@@ -324,6 +326,23 @@ export default function NewLeadScreen() {
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <View style={styles.labelRow}>
+                <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>GST Number</Text>
+                <View style={[styles.optionalTag, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+                  <Text style={[styles.optionalText, { color: colors.mutedForeground }]}>Optional</Text>
+                </View>
+              </View>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground }]}
+                placeholder="e.g. 27AAPFU0939F1ZV"
+                placeholderTextColor={colors.mutedForeground}
+                value={gstNumber}
+                onChangeText={setGstNumber}
+                autoCapitalize="characters"
               />
             </View>
           </View>

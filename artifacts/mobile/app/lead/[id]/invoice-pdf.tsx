@@ -238,11 +238,15 @@ export default function InvoicePDFScreen() {
               <Text style={[styles.metaLabel, { color: colors.mutedForeground }]}>Bill To</Text>
               <Text style={[styles.metaValue, { color: colors.foreground }]}>{lead.name}</Text>
               <Text style={[styles.metaPhone, { color: colors.mutedForeground }]}>{lead.whatsappNumber}</Text>
-              {invoice.buyerGstin && (
+              {invoice.buyerGstin ? (
                 <View style={[styles.gstinBadge, { backgroundColor: colors.muted, marginTop: 4 }]}>
                   <Text style={[styles.gstinText, { color: colors.foreground }]}>GSTIN: {invoice.buyerGstin}</Text>
                 </View>
-              )}
+              ) : lead.gstNumber ? (
+                <View style={[styles.gstinBadge, { backgroundColor: colors.muted, marginTop: 4 }]}>
+                  <Text style={[styles.gstinText, { color: colors.foreground }]}>GSTIN: {lead.gstNumber}</Text>
+                </View>
+              ) : null}
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>
               <Text style={[styles.metaLabel, { color: colors.mutedForeground }]}>Place of Supply</Text>

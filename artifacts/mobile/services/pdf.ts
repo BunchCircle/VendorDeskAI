@@ -147,6 +147,7 @@ export function generateQuotationHTML(
   <div class="to-label">Quotation For</div>
   <div class="to-name">${lead.name}</div>
   ${lead.whatsappNumber ? `<div style="font-size:13px;color:#78909C;">${lead.whatsappNumber}</div>` : ""}
+  ${lead.gstNumber ? `<div style="font-size:13px;color:#78909C;">GSTIN: ${lead.gstNumber}</div>` : ""}
 </div>
 <table>
   <thead>
@@ -397,7 +398,7 @@ export function generateInvoiceHTML(
       <div style="font-size:15px;font-weight:700">${lead.name}</div>
       <div style="color:#555;margin-top:2px">${lead.whatsappNumber}</div>
       ${lead.email ? `<div style="color:#555">${lead.email}</div>` : ""}
-      ${invoice.buyerGstin ? `<div class="gstin-badge" style="margin-top:4px">GSTIN: ${invoice.buyerGstin}</div>` : ""}
+      ${invoice.buyerGstin ? `<div class="gstin-badge" style="margin-top:4px">GSTIN: ${invoice.buyerGstin}</div>` : (lead.gstNumber ? `<div class="gstin-badge" style="margin-top:4px">GSTIN: ${lead.gstNumber}</div>` : "")}
     </div>
     <div></div>
   </div>

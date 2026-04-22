@@ -26,6 +26,7 @@ export interface Lead {
   whatsappNumber: string;
   whatsappSameAsPhone?: boolean;
   email?: string;
+  gstNumber?: string;
   status: "Pending" | "Quote Created" | "PDF Shared";
   createdAt: string;
 }

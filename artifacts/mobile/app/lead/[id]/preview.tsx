@@ -206,6 +206,11 @@ export default function QuotationPreviewScreen() {
             <Text style={[styles.quoteFor, { color: colors.mutedForeground }]}>
               For: {lead.name}
             </Text>
+            {!!lead.gstNumber && (
+              <Text style={[styles.quoteFor, { color: colors.mutedForeground, fontSize: 12 }]}>
+                GSTIN: {lead.gstNumber}
+              </Text>
+            )}
             <View style={styles.quoteMetaRow}>
               <Text style={[styles.quoteMeta, { color: colors.mutedForeground }]}>{date}</Text>
               <View style={[styles.quoteNumberBadge, { backgroundColor: colors.primaryLight }]}>
