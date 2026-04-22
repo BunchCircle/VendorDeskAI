@@ -4,6 +4,7 @@ import {
   Product,
   Quotation,
   VendorProfile,
+  sanitizeQuotation,
 } from "./storage";
 
 export type RemoteResult<T> =
@@ -159,17 +160,18 @@ export async function getRemoteQuotations(): Promise<RemoteResult<Quotation[]>> 
   if (error) return { ok: false, error: error.message };
   return {
     ok: true,
-    data: (data ?? []).map((d) => ({
-      id: d.id,
-      leadId: d.lead_id,
-      items: d.items ?? [],
-      notes: d.notes ?? undefined,
-      quoteNumber: d.quote_number,
-      discount: d.discount ?? undefined,
-      tax: d.tax ?? undefined,
-      status: d.status ?? undefined,
-      createdAt: d.created_at,
-    })),
+    data: (data ?? []).map((d) =>
+      sanitizeQuotation({
+        id: d.id,
+        leadId: d.lead_id,
+        items: d.items ?? [],
+        notes: d.notes ?? undefined,
+        quoteNumber: d.quote_number,
+        discount: d.discount ?? undefined,
+        status: d.status ?? undefined,
+        createdAt: d.created_at,
+      })
+    ),
   };
 }
 
@@ -184,7 +186,6 @@ export async function upsertRemoteQuotation(quotation: Quotation): Promise<void>
     notes: quotation.notes ?? null,
     quote_number: quotation.quoteNumber,
     discount: quotation.discount ?? null,
-    tax: quotation.tax ?? null,
     status: quotation.status ?? null,
     created_at: quotation.createdAt,
   });

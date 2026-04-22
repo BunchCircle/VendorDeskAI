@@ -50,7 +50,6 @@ export interface Quotation {
   createdAt: string;
   quoteNumber: string;
   discount?: { enabled: boolean; type: "percent" | "flat"; value: number };
-  tax?: { enabled: boolean; label: string; rate: number };
   status?: QuotationStatus;
 }
 
@@ -167,7 +166,8 @@ export async function getLeadById(id: string): Promise<Lead | null> {
 
 export async function getQuotations(): Promise<Quotation[]> {
   const raw = await AsyncStorage.getItem(KEYS.QUOTATIONS);
-  return raw ? JSON.parse(raw) : [];
+  const quotations: Quotation[] = raw ? JSON.parse(raw) : [];
+  return quotations.map(sanitizeQuotation);
 }
 
 export async function saveQuotation(quotation: Quotation): Promise<void> {
@@ -366,6 +366,21 @@ export function computeTaxSplitFromAmount(
       igstAmt: totalTaxAmt,
     };
   }
+}
+
+/**
+ * Legacy shape for quotations saved before the `tax` field was removed.
+ * Used only for migration-safe stripping; never stored with this type.
+ */
+type LegacyQuotation = Quotation & { tax?: { enabled: boolean; label: string; rate: number } };
+
+/**
+ * Strip any legacy `tax` field that may still exist on quotations saved
+ * before task-51 removed the field from the type.
+ */
+export function sanitizeQuotation(q: Quotation): Quotation {
+  const { tax: _removed, ...clean } = q as LegacyQuotation;
+  return clean as Quotation;
 }
 
 /**

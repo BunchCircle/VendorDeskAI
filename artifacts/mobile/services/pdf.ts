@@ -21,11 +21,21 @@ export function generateQuotationHTML(
 
   const afterDiscount = subtotal - discountAmount;
 
-  const taxAmount = (() => {
-    const t = quotation.tax;
-    if (!t?.enabled) return 0;
-    return (afterDiscount * t.rate) / 100;
-  })();
+  // Per-item GST from catalogue taxRate, grouped by slab
+  const perItemSlabMap = new Map<number, { taxableAmt: number; taxAmt: number }>();
+  for (const item of quotation.items) {
+    const r = item.taxRate || 0;
+    if (r <= 0) continue;
+    const taxableAmt = item.quantity * item.rate;
+    const taxAmt = (taxableAmt * r) / 100;
+    const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
+    perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+  }
+  const perItemSlabs = Array.from(perItemSlabMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, { taxableAmt, taxAmt }]) => ({ rate, taxableAmt, taxAmt }));
+  const hasPerItemTaxes = perItemSlabs.length > 0;
+  const taxAmount = hasPerItemTaxes ? perItemSlabs.reduce((s, slab) => s + slab.taxAmt, 0) : 0;
 
   const grandTotal = afterDiscount + taxAmount;
 
@@ -54,10 +64,31 @@ export function generateQuotationHTML(
     ? `<div class="total-row"><span class="total-label">Discount (${quotation.discount.type === "percent" ? `${quotation.discount.value}%` : "flat"})</span><span class="total-amount" style="color:#E53935">-${formatCurrency(discountAmount)}</span></div>`
     : "";
 
-  const noTax = !quotation.tax?.enabled || !quotation.tax.rate || quotation.tax.rate <= 0;
-  const taxRow = !noTax
-    ? `<div class="total-row"><span class="total-label">${quotation.tax.label || "Tax"} (${quotation.tax.rate}%)</span><span class="total-amount">+${formatCurrency(taxAmount)}</span></div>`
+  const taxSummaryRows = hasPerItemTaxes
+    ? perItemSlabs.map(
+        (slab) =>
+          `<div class="total-row"><span class="total-label">GST (${slab.rate}%)</span><span class="total-amount">+${formatCurrency(slab.taxAmt)}</span></div>`
+      ).join("")
     : `<div class="total-row"><span class="total-label" style="font-style:italic;color:#B0BEC5">Quotation without Taxes</span></div>`;
+
+  const gstBreakdownTable = hasPerItemTaxes ? `
+  <table class="gst-table">
+    <thead>
+      <tr>
+        <th>GST Rate</th>
+        <th class="right">Taxable Amt</th>
+        <th class="right">GST Amt</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${perItemSlabs.map((slab) => `
+      <tr>
+        <td>${slab.rate}%</td>
+        <td class="right">${formatCurrency(slab.taxableAmt)}</td>
+        <td class="right">${formatCurrency(slab.taxAmt)}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>` : "";
 
   return `<!DOCTYPE html>
 <html>
@@ -91,6 +122,7 @@ export function generateQuotationHTML(
   .total-label { color: #78909C; }
   .total-amount { font-weight: 500; min-width: 80px; text-align: right; }
   .grand-total { font-size: 18px; font-weight: 700; color: #00897B; padding-top: 12px; border-top: 2px solid #00897B; }
+  .gst-table thead { background: #004D40; }
   .notes { margin-top: 24px; font-size: 13px; color: #78909C; padding: 16px; background: #F5F7F6; border-radius: 8px; }
   .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #B0BEC5; }
 </style>
@@ -122,10 +154,11 @@ export function generateQuotationHTML(
   </thead>
   <tbody>${itemRows}</tbody>
 </table>
+${gstBreakdownTable}
 <div class="totals">
   <div class="total-row"><span class="total-label">Subtotal</span><span class="total-amount">${formatCurrency(subtotal)}</span></div>
   ${discountRow}
-  ${taxRow}
+  ${taxSummaryRows}
   <div class="total-row grand-total">
     <span class="total-label">Grand Total</span>
     <span class="total-amount">${formatCurrency(grandTotal)}</span>

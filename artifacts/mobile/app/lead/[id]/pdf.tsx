@@ -54,11 +54,21 @@ export default function PDFViewerScreen() {
 
   const afterDiscount = subtotal - discountAmount;
 
-  const taxAmount = (() => {
-    const t = quotation.tax;
-    if (!t?.enabled) return 0;
-    return (afterDiscount * t.rate) / 100;
-  })();
+  // Per-item GST from catalogue taxRate, grouped by slab
+  const perItemSlabMap = new Map<number, { taxableAmt: number; taxAmt: number }>();
+  for (const item of quotation.items) {
+    const r = item.taxRate || 0;
+    if (r <= 0) continue;
+    const taxableAmt = item.quantity * item.rate;
+    const taxAmt = (taxableAmt * r) / 100;
+    const prev = perItemSlabMap.get(r) || { taxableAmt: 0, taxAmt: 0 };
+    perItemSlabMap.set(r, { taxableAmt: prev.taxableAmt + taxableAmt, taxAmt: prev.taxAmt + taxAmt });
+  }
+  const perItemSlabs = Array.from(perItemSlabMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, { taxableAmt, taxAmt }]) => ({ rate, taxableAmt, taxAmt }));
+  const hasPerItemTaxes = perItemSlabs.length > 0;
+  const taxAmount = hasPerItemTaxes ? perItemSlabs.reduce((s, slab) => s + slab.taxAmt, 0) : 0;
 
   const grandTotal = afterDiscount + taxAmount;
 
@@ -257,12 +267,22 @@ export default function PDFViewerScreen() {
                   colors={colors}
                 />
               )}
-              {quotation.tax?.enabled && quotation.tax.rate > 0 ? (
-                <SummaryRow
-                  label={`${quotation.tax.label || "Tax"} (${quotation.tax.rate}%)`}
-                  value={`+₹${taxAmount.toLocaleString("en-IN")}`}
-                  colors={colors}
-                />
+              {hasPerItemTaxes ? (
+                perItemSlabs.map((slab) => (
+                  <React.Fragment key={slab.rate}>
+                    <SummaryRow
+                      label={`${slab.rate}% slab — taxable ₹${slab.taxableAmt.toLocaleString("en-IN")}`}
+                      value=""
+                      colors={colors}
+                      labelStyle={{ fontStyle: "italic", fontSize: 11 }}
+                    />
+                    <SummaryRow
+                      label={`GST (${slab.rate}%)`}
+                      value={`+₹${slab.taxAmt.toLocaleString("en-IN")}`}
+                      colors={colors}
+                    />
+                  </React.Fragment>
+                ))
               ) : (
                 <Text style={[styles.noTaxNote, { color: colors.mutedForeground }]}>
                   Quotation without Taxes
@@ -334,16 +354,17 @@ export default function PDFViewerScreen() {
   );
 }
 
-function SummaryRow({ label, value, valueColor, colors }: {
+function SummaryRow({ label, value, valueColor, colors, labelStyle }: {
   label: string;
   value: string;
   valueColor?: string;
   colors: ReturnType<typeof useColors>;
+  labelStyle?: object;
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{label}</Text>
-      <Text style={[styles.summaryValue, { color: valueColor || colors.foreground }]}>{value}</Text>
+      <Text style={[styles.summaryLabel, { color: colors.mutedForeground }, labelStyle]}>{label}</Text>
+      {!!value && <Text style={[styles.summaryValue, { color: valueColor || colors.foreground }]}>{value}</Text>}
     </View>
   );
 }

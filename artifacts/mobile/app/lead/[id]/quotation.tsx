@@ -56,6 +56,9 @@ import {
   InvoiceStatus,
   QuotationStatus,
   computeTaxSplit,
+  computeTaxSplitFromAmount,
+  computePerItemTaxData,
+  sanitizeQuotation,
   getVendorStateCode,
 } from "@/services/storage";
 
@@ -335,8 +338,8 @@ export default function QuotationWorkspaceScreen() {
       const d = q.discount;
       const discAmt = d?.enabled ? (d.type === "percent" ? (sub * d.value) / 100 : Math.min(d.value, sub)) : 0;
       const afterDisc = sub - discAmt;
-      const t = q.tax;
-      const taxAmt = t?.enabled ? (afterDisc * t.rate) / 100 : 0;
+      const perItemTax = computePerItemTaxData(q.items);
+      const taxAmt = perItemTax.totalTax;
       const total = afterDisc + taxAmt;
       events.push({
         id: `quote-event-${q.id}`,
@@ -640,8 +643,11 @@ export default function QuotationWorkspaceScreen() {
       const d = existing.discount;
       const discAmt = d?.enabled ? (d.type === "percent" ? (subtotal * d.value) / 100 : Math.min(d.value, subtotal)) : 0;
       const afterDisc = subtotal - discAmt;
-      const taxRate = existing.tax?.enabled ? (existing.tax.rate ?? 0) : 0;
-      const taxSplit = computeTaxSplit(taxRate, afterDisc, vendorStateCode, defaultPlaceOfSupply);
+      const perItemTaxData = computePerItemTaxData(existing.items);
+      const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
+      const taxSplit = hasPerItemTaxes
+        ? computeTaxSplitFromAmount(perItemTaxData.totalTax, vendorStateCode, defaultPlaceOfSupply)
+        : computeTaxSplit(0, afterDisc, vendorStateCode, defaultPlaceOfSupply);
       const invoice: Invoice = {
         id: generateId(),
         leadId: lead.id,
@@ -650,7 +656,7 @@ export default function QuotationWorkspaceScreen() {
         items: existing.items.map((item) => ({ ...item, id: generateId() })),
         notes: existing.notes,
         discount: existing.discount,
-        tax: existing.tax ? { ...existing.tax, label: "GST" } : undefined,
+        tax: hasPerItemTaxes ? { enabled: true, label: "GST", rate: 0 } : undefined,
         placeOfSupply: defaultPlaceOfSupply,
         taxSplit,
         status: "draft",
@@ -736,7 +742,7 @@ export default function QuotationWorkspaceScreen() {
     if (!lead) return;
     const existing = getLatestQuotation();
     const quotation = existing
-      ? { ...existing, items: quotationItems }
+      ? sanitizeQuotation({ ...existing, items: quotationItems })
       : {
           id: generateId(),
           leadId: lead.id,

@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -20,7 +20,13 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
-import { generateId, Quotation, QuotationItem } from "@/services/storage";
+import {
+  generateId,
+  Quotation,
+  QuotationItem,
+  computePerItemTaxData,
+  sanitizeQuotation,
+} from "@/services/storage";
 
 type DiscountType = "percent" | "flat";
 
@@ -44,10 +50,6 @@ export default function QuotationPreviewScreen() {
   const [discountType, setDiscountType] = useState<DiscountType>(existingQuotation?.discount?.type ?? "percent");
   const [discountValue, setDiscountValue] = useState(existingQuotation?.discount?.value?.toString() ?? "");
 
-  const [taxEnabled, setTaxEnabled] = useState(existingQuotation?.tax?.enabled ?? false);
-  const [taxLabel, setTaxLabel] = useState(existingQuotation?.tax?.label ?? "GST");
-  const [taxRate, setTaxRate] = useState(existingQuotation?.tax?.rate?.toString() ?? "");
-
   useEffect(() => {
     if (existingQuotation) {
       setItems(existingQuotation.items);
@@ -56,11 +58,6 @@ export default function QuotationPreviewScreen() {
         setDiscountEnabled(existingQuotation.discount.enabled);
         setDiscountType(existingQuotation.discount.type);
         setDiscountValue(existingQuotation.discount.value.toString());
-      }
-      if (existingQuotation.tax) {
-        setTaxEnabled(existingQuotation.tax.enabled);
-        setTaxLabel(existingQuotation.tax.label);
-        setTaxRate(existingQuotation.tax.rate.toString());
       }
     }
   }, [existingQuotation]);
@@ -76,50 +73,28 @@ export default function QuotationPreviewScreen() {
 
   const afterDiscount = subtotal - discountAmount;
 
-  const taxAmount = (() => {
-    if (!taxEnabled) return 0;
-    const r = parseFloat(taxRate) || 0;
-    return (afterDiscount * r) / 100;
-  })();
+  const perItemTaxData = useMemo(() => computePerItemTaxData(items), [items]);
+  const hasPerItemTaxes = perItemTaxData.slabs.length > 0;
+  const taxAmount = hasPerItemTaxes ? perItemTaxData.totalTax : 0;
 
   const grandTotal = afterDiscount + taxAmount;
-
-  const deriveDefaultTaxRate = (currentItems: QuotationItem[]): string => {
-    if (currentItems.length === 0) return "";
-    const allHaveRate = currentItems.every((item) => item.taxRate !== undefined);
-    if (!allHaveRate) return "";
-    const rates = currentItems.map((item) => item.taxRate as number);
-    const allSame = rates.every((r) => r === rates[0]);
-    return allSame ? rates[0].toString() : "";
-  };
 
   const handleSaveItem = (item: QuotationItem) => {
     setItems((prev) => {
       const idx = prev.findIndex((i) => i.id === item.id);
-      let next: QuotationItem[];
       if (idx >= 0) {
-        next = [...prev];
+        const next = [...prev];
         next[idx] = item;
-      } else {
-        next = [...prev, item];
+        return next;
       }
-      if (taxEnabled) {
-        setTaxRate(deriveDefaultTaxRate(next));
-      }
-      return next;
+      return [...prev, item];
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleDeleteItem = (itemId: string) => {
     const doDelete = () => {
-      setItems((prev) => {
-        const next = prev.filter((i) => i.id !== itemId);
-        if (taxEnabled) {
-          setTaxRate(deriveDefaultTaxRate(next));
-        }
-        return next;
-      });
+      setItems((prev) => prev.filter((i) => i.id !== itemId));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     };
     if (Platform.OS === "web") {
@@ -132,21 +107,17 @@ export default function QuotationPreviewScreen() {
     }
   };
 
-  const buildUpdatedQuotation = (): Quotation => ({
-    ...existingQuotation!,
-    items,
-    notes,
-    discount: {
-      enabled: discountEnabled,
-      type: discountType,
-      value: parseFloat(discountValue) || 0,
-    },
-    tax: {
-      enabled: taxEnabled,
-      label: taxLabel,
-      rate: parseFloat(taxRate) || 0,
-    },
-  });
+  const buildUpdatedQuotation = (): Quotation =>
+    sanitizeQuotation({
+      ...existingQuotation!,
+      items,
+      notes,
+      discount: {
+        enabled: discountEnabled,
+        type: discountType,
+        value: parseFloat(discountValue) || 0,
+      },
+    });
 
   const handleCreatePDF = async () => {
     if (!lead || !existingQuotation) return;
@@ -314,50 +285,43 @@ export default function QuotationPreviewScreen() {
             </View>
           )}
 
-          <View style={[styles.toggleDivider, { backgroundColor: colors.border }]} />
-
-          <ToggleRow
-            label="Tax"
-            icon="percent"
-            enabled={taxEnabled}
-            onToggle={(v) => {
-              setTaxEnabled(v);
-              if (v) setTaxRate(deriveDefaultTaxRate(items));
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-            colors={colors}
-          />
-          {taxEnabled && (
-            <View style={styles.toggleDetail}>
-              <View style={styles.taxRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>Label</Text>
-                  <TextInput
-                    style={[styles.toggleInput, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground }]}
-                    value={taxLabel}
-                    onChangeText={setTaxLabel}
-                    placeholder="GST / IGST / VAT"
-                    placeholderTextColor={colors.mutedForeground}
-                  />
+          {hasPerItemTaxes && (
+            <>
+              <View style={[styles.toggleDivider, { backgroundColor: colors.border }]} />
+              <View style={[styles.toggleRow, { paddingVertical: 6 }]}>
+                <View style={styles.toggleRowLeft}>
+                  <View style={[styles.toggleIcon, { backgroundColor: colors.primaryLight }]}>
+                    <Icon name="percent" size={15} color={colors.primary} />
+                  </View>
+                  <View>
+                    <Text style={[styles.toggleLabel, { color: colors.foreground }]}>GST</Text>
+                    <Text style={[styles.miniLabel, { color: colors.mutedForeground, marginTop: 1 }]}>
+                      Auto from catalogue
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>Rate (%)</Text>
-                  <TextInput
-                    style={[styles.toggleInput, { backgroundColor: colors.muted, borderColor: colors.border, color: colors.foreground }]}
-                    value={taxRate}
-                    onChangeText={setTaxRate}
-                    placeholder="18"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-              </View>
-              {taxAmount > 0 && (
-                <Text style={[styles.computedHint, { color: colors.primary }]}>
-                  = +₹{taxAmount.toLocaleString("en-IN")}
+                <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>
+                  ₹{taxAmount.toLocaleString("en-IN")}
                 </Text>
-              )}
-            </View>
+              </View>
+              {perItemTaxData.slabs.map((slab) => (
+                <View key={slab.rate} style={[styles.toggleDetail, { paddingTop: 4 }]}>
+                  <View style={styles.slabRow}>
+                    <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
+                      {slab.rate}% slab — taxable ₹{slab.taxableAmt.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
+                  <View style={[styles.slabRow, { marginTop: 2 }]}>
+                    <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>
+                      GST ({slab.rate}%)
+                    </Text>
+                    <Text style={{ color: colors.foreground, fontFamily: "Inter_500Medium", fontSize: 13 }}>
+                      ₹{slab.taxAmt.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </>
           )}
         </View>
 
@@ -378,16 +342,16 @@ export default function QuotationPreviewScreen() {
               </Text>
             </View>
           )}
-          {taxEnabled && taxAmount > 0 && (
-            <View style={styles.totalRow}>
+          {hasPerItemTaxes && perItemTaxData.slabs.map((slab) => (
+            <View key={slab.rate} style={styles.totalRow}>
               <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>
-                {taxLabel || "Tax"} ({taxRate}%)
+                GST ({slab.rate}%)
               </Text>
               <Text style={[styles.totalValue, { color: colors.foreground }]}>
-                +₹{taxAmount.toLocaleString("en-IN")}
+                +₹{slab.taxAmt.toLocaleString("en-IN")}
               </Text>
             </View>
-          )}
+          ))}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.totalRow}>
             <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
@@ -615,6 +579,7 @@ const styles = StyleSheet.create({
   toggleLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
   toggleDivider: { height: 1, marginVertical: 8 },
   toggleDetail: { paddingLeft: 44, gap: 10, marginTop: 4, marginBottom: 4 },
+  slabRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   typeSwitch: { flexDirection: "row", borderRadius: 10, padding: 3, alignSelf: "flex-start" },
   typeBtn: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 8 },
   typeBtnText: { fontSize: 13, fontFamily: "Inter_500Medium" },
@@ -626,7 +591,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_400Regular",
   },
-  taxRow: { flexDirection: "row", gap: 12 },
   miniLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", marginBottom: 4, letterSpacing: 0.3, textTransform: "uppercase" },
   computedHint: { fontSize: 13, fontFamily: "Inter_700Bold" },
   totalsSection: {
