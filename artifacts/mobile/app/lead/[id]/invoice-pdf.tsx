@@ -145,7 +145,7 @@ export default function InvoicePDFScreen() {
         await updateInvoiceStatus(invoice.id, "sent");
       }
     } catch {
-      Alert.alert("Error", "Could not open WhatsApp.");
+      Alert.alert("Error", "Could not open the share sheet.");
     }
     setSharing(false);
   };

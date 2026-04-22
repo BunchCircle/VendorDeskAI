@@ -125,7 +125,7 @@ export default function PDFViewerScreen() {
       await shareViaWhatsApp(uri, lead.whatsappNumber, message);
       await updateLead({ ...lead, status: "PDF Shared" });
     } catch {
-      Alert.alert("Error", "Could not open WhatsApp.");
+      Alert.alert("Error", "Could not open the share sheet.");
     }
     setSharing(false);
   };
