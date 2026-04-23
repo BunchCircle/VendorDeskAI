@@ -2,6 +2,7 @@ import React from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { Image } from "expo-image";
 import { Icon, IconName } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 
@@ -21,14 +22,11 @@ interface AppHeaderProps {
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return (
-    <LinearGradient
-      colors={["#4F46E5", "#6D28D9"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.logoMark, { width: size, height: size, borderRadius: size * 0.28 }]}
-    >
-      <Text style={[styles.logoMarkText, { fontSize: size * 0.38 }]}>VD</Text>
-    </LinearGradient>
+    <Image
+      source={require("../assets/images/logo-icon.png")}
+      style={[styles.logoMark, { width: size, height: size }]}
+      contentFit="contain"
+    />
   );
 }
 
@@ -159,17 +157,7 @@ const styles = StyleSheet.create({
   lockupBack: {
     gap: 6,
   },
-  logoMark: {
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0px 2px 6px rgba(79, 70, 229, 0.3)",
-    elevation: 3,
-  },
-  logoMarkText: {
-    color: "#FFFFFF",
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.5,
-  },
+  logoMark: {},
   wordmark: {
     flexDirection: "row",
     alignItems: "center",
