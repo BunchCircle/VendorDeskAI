@@ -21,7 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { generateQuotationHTML } from "@/services/pdf";
-import { savePDFToDevice, shareViaWhatsApp } from "@/services/pdfActions";
+import { savePDFToDevice, downloadPDFWeb, shareViaWhatsApp } from "@/services/pdfActions";
 
 export default function PDFViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -84,6 +84,9 @@ export default function PDFViewerScreen() {
   const generatePDF = async (): Promise<string | null> => {
     if (!vendorProfile) return null;
     const html = generateQuotationHTML(quotation, vendorProfile, lead);
+    if (Platform.OS === "web") {
+      return html;
+    }
     try {
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       return uri;
@@ -93,21 +96,21 @@ export default function PDFViewerScreen() {
   };
 
   const handleDownloadPDF = async () => {
-    if (Platform.OS === "web") {
-      Alert.alert("Not Supported", "PDF download is available on the mobile app.");
-      return;
-    }
     setDownloading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const uri = await generatePDF();
-    if (!uri) {
+    const result = await generatePDF();
+    if (!result) {
       Alert.alert("Error", "Could not generate PDF. Please try again.");
       setDownloading(false);
       return;
     }
     try {
       const filename = `Quotation-${quotation.quoteNumber}.pdf`;
-      await savePDFToDevice(uri, filename);
+      if (Platform.OS === "web") {
+        await downloadPDFWeb(result, filename);
+      } else {
+        await savePDFToDevice(result, filename);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert("Error", "Could not save PDF to device.");

@@ -23,7 +23,7 @@ import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { generateInvoiceHTML } from "@/services/pdf";
 import { INDIAN_STATES, InvoiceStatus, computePerItemTaxData } from "@/services/storage";
-import { savePDFToDevice, shareViaWhatsApp } from "@/services/pdfActions";
+import { savePDFToDevice, downloadPDFWeb, shareViaWhatsApp } from "@/services/pdfActions";
 
 const STATUS_CONFIG = {
   draft: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706", label: "Draft" },
@@ -92,6 +92,9 @@ export default function InvoicePDFScreen() {
   const generatePDF = async (): Promise<string | null> => {
     if (!vendorProfile) return null;
     const html = generateInvoiceHTML(invoice, vendorProfile, lead);
+    if (Platform.OS === "web") {
+      return html;
+    }
     try {
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       return uri;
@@ -101,21 +104,21 @@ export default function InvoicePDFScreen() {
   };
 
   const handleDownloadPDF = async () => {
-    if (Platform.OS === "web") {
-      Alert.alert("Not Supported", "PDF download is available on the mobile app.");
-      return;
-    }
     setDownloading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const uri = await generatePDF();
-    if (!uri) {
+    const result = await generatePDF();
+    if (!result) {
       Alert.alert("Error", "Could not generate PDF. Please try again.");
       setDownloading(false);
       return;
     }
     try {
       const filename = `Invoice-${invoice.invoiceNumber}.pdf`;
-      await savePDFToDevice(uri, filename);
+      if (Platform.OS === "web") {
+        await downloadPDFWeb(result, filename);
+      } else {
+        await savePDFToDevice(result, filename);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (invoice.status === "draft") {
         await updateInvoiceStatus(invoice.id, "sent");

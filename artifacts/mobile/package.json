@@ -65,6 +65,8 @@
     "expo-print": "^15.0.8",
     "expo-sharing": "^14.0.8",
     "expo-speech-recognition": "^3.1.2",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react-native": "^1.7.0",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
