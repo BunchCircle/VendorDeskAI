@@ -1,8 +1,21 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Router, type IRouter } from "express";
-import * as XLSX from "xlsx";
+import { Worker } from "worker_threads";
+import path from "path";
+import { fileURLToPath } from "url";
+import { aiRateLimit } from "../lib/rate-limit";
+import { requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
+
+router.use(aiRateLimit);
+router.use(requireAuth);
+
+const MAX_BASE64_BYTES = 4 * 1024 * 1024;
+const MAX_CHAT_MESSAGES = 50;
+const MAX_MESSAGE_CHARS = 4000;
+const MAX_CATALOGUE_ITEMS = 500;
+const XLSX_PARSE_TIMEOUT_MS = 10_000;
 
 function getGeminiClient(): GoogleGenerativeAI | null {
   const apiKey = process.env["GOOGLE_API_KEY"];
@@ -11,7 +24,6 @@ function getGeminiClient(): GoogleGenerativeAI | null {
 }
 
 function isSpreadsheetMimeType(mimeType: string): boolean {
-  // Normalise: lowercase and strip any ";charset=..." or similar parameters
   const base = (mimeType ?? "").toLowerCase().split(";")[0].trim();
   return (
     base === "text/csv" ||
@@ -21,27 +33,42 @@ function isSpreadsheetMimeType(mimeType: string): boolean {
   );
 }
 
-function spreadsheetBase64ToPlainText(dataBase64: string): string {
-  const buffer = Buffer.from(dataBase64, "base64");
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-
-  const lines: string[] = [];
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
-    const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as string[][];
-    if (rows.length === 0) continue;
-    if (workbook.SheetNames.length > 1) {
-      lines.push(`--- Sheet: ${sheetName} ---`);
-    }
-    for (const row of rows) {
-      const cells = row.map((c) => String(c ?? "").trim());
-      if (cells.some((c) => c !== "")) {
-        lines.push(cells.join("\t"));
-      }
-    }
+function spreadsheetBase64ToPlainText(dataBase64: string): Promise<string> {
+  const decoded = Buffer.from(dataBase64, "base64");
+  if (decoded.byteLength > MAX_BASE64_BYTES) {
+    return Promise.reject(
+      new Error(`Spreadsheet exceeds maximum allowed size (${MAX_BASE64_BYTES / 1024 / 1024} MB decoded).`)
+    );
   }
-  return lines.join("\n");
+
+  const workerPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "workers",
+    "xlsx-parser.mjs"
+  );
+
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerPath, { workerData: { base64Data: dataBase64 } });
+
+    const timer = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("Spreadsheet parsing timed out."));
+    }, XLSX_PARSE_TIMEOUT_MS);
+
+    worker.once("message", (msg: { ok: boolean; text?: string; error?: string }) => {
+      clearTimeout(timer);
+      if (msg.ok) {
+        resolve(msg.text ?? "");
+      } else {
+        reject(new Error(msg.error ?? "Failed to parse spreadsheet"));
+      }
+    });
+
+    worker.once("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
 }
 
 function tryParseProductsJson(
@@ -52,7 +79,6 @@ function tryParseProductsJson(
     .replace(/```\s*/g, "")
     .trim();
 
-  // First attempt: direct parse
   try {
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed)) return normaliseProducts(parsed);
@@ -60,7 +86,6 @@ function tryParseProductsJson(
     // fall through
   }
 
-  // Second attempt: extract the first JSON array from anywhere in the text
   const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
   if (arrayMatch) {
     try {
@@ -71,7 +96,6 @@ function tryParseProductsJson(
     }
   }
 
-  // Third attempt: extract individual JSON objects and assemble into array
   const objectMatches = [...cleaned.matchAll(/\{[^{}]*"name"[^{}]*\}/g)];
   if (objectMatches.length > 0) {
     const products: Array<{ name: string; price: number; unit: string }> = [];
@@ -104,14 +128,11 @@ function normaliseProducts(
 function parsePrice(raw: unknown): number {
   if (typeof raw === "number") return raw;
   const s = String(raw ?? "").trim();
-  // Strip currency prefixes (₹, Rs., Rs , INR, $, etc.) and surrounding whitespace
   const stripped = s
     .replace(/^(₹|Rs\.?|INR|inr|\$|€|£)\s*/i, "")
     .trim();
-  // For ranges like "80-100" or "80–100", extract the first (lower) number
   const firstNumberMatch = stripped.match(/(\d[\d,]*(?:\.\d+)?)/);
   if (!firstNumberMatch) return 0;
-  // Remove thousands-separator commas, then parse
   return parseFloat(firstNumberMatch[1].replace(/,/g, "")) || 0;
 }
 
@@ -120,7 +141,6 @@ function normaliseProduct(
 ): { name: string; price: number; unit: string } | null {
   if (!item || typeof item !== "object") return null;
   const obj = item as Record<string, unknown>;
-  // Accept common name field aliases used by AI in different response styles
   const rawName =
     obj.name ?? obj.Name ?? obj.product ?? obj.Product ?? obj.item ?? obj.Item ?? "";
   const name = String(rawName).trim();
@@ -178,7 +198,6 @@ async function generateWithModelFallback(
     return result.response.text().trim();
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Fall back on 503 (high demand) or 500 (server error) from the primary model
     if (msg.includes("503") || msg.includes("500") || msg.includes("Service Unavailable")) {
       log.warn({ primaryModel, fallbackModel }, "Primary model unavailable — retrying with fallback model");
       const model = genAI.getGenerativeModel({ model: fallbackModel });
@@ -201,8 +220,6 @@ async function runExtractionWithFallback(
 
   let products = tryParseProductsJson(rawText);
 
-  // Confidence gate: if parse succeeded but yielded nothing from a non-empty source,
-  // or if parse completely failed, try the fallback extraction pass.
   const sourceSeemsNonEmpty = fallbackContext.trim().length > 50;
   const lowConfidence = products === null || (products.length === 0 && sourceSeemsNonEmpty);
 
@@ -235,6 +252,25 @@ router.post("/chat", async (req, res) => {
     catalogue: Array<{ name: string; price: number; unit: string }>;
   };
 
+  if (!Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: "messages array is required" });
+    return;
+  }
+
+  if (messages.length > MAX_CHAT_MESSAGES) {
+    res.status(400).json({ error: `Too many messages — maximum is ${MAX_CHAT_MESSAGES}.` });
+    return;
+  }
+
+  const sanitisedMessages = messages.map((m) => ({
+    role: String(m.role ?? "").slice(0, 20),
+    content: String(m.content ?? "").slice(0, MAX_MESSAGE_CHARS),
+  }));
+
+  const sanitisedCatalogue = Array.isArray(catalogue)
+    ? catalogue.slice(0, MAX_CATALOGUE_ITEMS)
+    : [];
+
   const genAI = getGeminiClient();
   if (!genAI) {
     res.status(503).json({ error: "AI service not configured" });
@@ -242,8 +278,8 @@ router.post("/chat", async (req, res) => {
   }
 
   const catalogueText =
-    catalogue && catalogue.length > 0
-      ? catalogue.map((p) => `- ${p.name}: ₹${p.price}/${p.unit}`).join("\n")
+    sanitisedCatalogue.length > 0
+      ? sanitisedCatalogue.map((p) => `- ${p.name}: ₹${p.price}/${p.unit}`).join("\n")
       : "No products in catalogue.";
 
   const systemInstruction = `You are a quotation assistant for an Indian small business vendor. Your job is to help create quotations.
@@ -269,13 +305,12 @@ Respond ONLY with a valid JSON object (no markdown, no code blocks) in this form
       systemInstruction,
     });
 
-    // Map conversation history: skip last message (sent as prompt), convert roles
-    const history = (messages || []).slice(0, -1).map((m) => ({
+    const history = sanitisedMessages.slice(0, -1).map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     }));
 
-    const lastMessage = messages?.[messages.length - 1]?.content ?? "";
+    const lastMessage = sanitisedMessages[sanitisedMessages.length - 1]?.content ?? "";
 
     const chat = model.startChat({ history });
     const result = await chat.sendMessage(lastMessage);
@@ -302,6 +337,11 @@ router.post("/transcribe", async (req, res) => {
 
   if (!audioBase64) {
     res.status(400).json({ error: "audioBase64 is required" });
+    return;
+  }
+
+  if (audioBase64.length > MAX_BASE64_BYTES * (4 / 3)) {
+    res.status(400).json({ error: "Audio payload exceeds maximum allowed size." });
     return;
   }
 
@@ -345,17 +385,19 @@ router.post("/extract-catalogue", async (req, res) => {
     return;
   }
 
-  // Primary: gemini-2.5-flash (best vision); fallback: gemini-2.5-flash-lite
-  // (always available). generateWithModelFallback auto-retries on 503.
+  if (dataBase64.length > MAX_BASE64_BYTES * (4 / 3)) {
+    res.status(400).json({ error: "Payload exceeds maximum allowed size." });
+    return;
+  }
+
   const PRIMARY_MODEL = "gemini-2.5-flash";
   const FALLBACK_MODEL = "gemini-2.5-flash-lite";
 
   try {
     if (isSpreadsheetMimeType(mimeType)) {
-      // Parse spreadsheet server-side — send clean text to the AI, not raw binary
       let plainText: string;
       try {
-        plainText = spreadsheetBase64ToPlainText(dataBase64);
+        plainText = await spreadsheetBase64ToPlainText(dataBase64);
       } catch (parseErr) {
         req.log.error({ parseErr }, "Failed to parse spreadsheet");
         res.status(400).json({
@@ -386,7 +428,6 @@ router.post("/extract-catalogue", async (req, res) => {
       );
       res.json(products);
     } else {
-      // Image (or unrecognised type) — send as inline data for vision analysis
       const inlinePart: Part = {
         inlineData: {
           mimeType: mimeType || "image/jpeg",
@@ -395,8 +436,6 @@ router.post("/extract-catalogue", async (req, res) => {
       };
       const contentParts: Part[] = [inlinePart, { text: EXTRACTION_PROMPT }];
 
-      // For images we cannot measure content size from text, so we use a sentinel
-      // that is always >50 chars — the gate will fire whenever 0 products are returned.
       const products = await runExtractionWithFallback(
         genAI,
         PRIMARY_MODEL,

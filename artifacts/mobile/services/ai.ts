@@ -1,5 +1,6 @@
 import type { Product, QuotationItem } from "./storage";
 import { generateId } from "./storage";
+import { supabase } from "./supabase";
 
 export interface AIMessage {
   role: "user" | "assistant";
@@ -21,6 +22,18 @@ function getApiBaseUrl(): string {
   return "";
 }
 
+async function getAiHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  } catch {
+    // Best-effort: if session retrieval fails, proceed without token (server will reject with 401)
+  }
+  return headers;
+}
+
 export async function parseRequirementWithAI(
   userInput: string,
   catalogue: Product[],
@@ -30,7 +43,7 @@ export async function parseRequirementWithAI(
     const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/ai/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await getAiHeaders(),
       body: JSON.stringify({
         messages: [
           ...conversationHistory,
@@ -126,7 +139,7 @@ export async function transcribeAudio(audioBase64: string, mimeType: string): Pr
     const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/ai/transcribe`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await getAiHeaders(),
       body: JSON.stringify({ audioBase64, mimeType }),
     });
     if (!response.ok) return "";
@@ -145,7 +158,7 @@ export async function extractCatalogueFromFile(
     const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/ai/extract-catalogue`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await getAiHeaders(),
       body: JSON.stringify({ dataBase64, mimeType }),
     });
     if (!response.ok) return [];
@@ -163,7 +176,7 @@ export async function extractProductsFromText(
     const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/ai/extract-products`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await getAiHeaders(),
       body: JSON.stringify({ text }),
     });
 
