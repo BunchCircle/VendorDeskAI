@@ -1,50 +1,50 @@
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 export async function downloadPDFWeb(html: string, filename: string): Promise<void> {
-  const container = document.createElement("div");
-  container.style.position = "absolute";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  container.style.width = "794px";
-  container.style.background = "#fff";
-  container.innerHTML = html;
-  document.body.appendChild(container);
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "none";
+  document.body.appendChild(iframe);
 
   try {
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
+    const doc = iframe.contentWindow?.document;
+    if (!doc) throw new Error("Could not access iframe document");
+
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${filename}</title>
+  <style>
+    @media print {
+      @page { margin: 0; size: A4; }
+      body { margin: 0; }
+    }
+  </style>
+</head>
+<body>${html}</body>
+</html>`);
+    doc.close();
+
+    await new Promise<void>((resolve) => {
+      iframe.onload = () => resolve();
+      setTimeout(resolve, 800);
     });
 
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    let heightLeft = imgHeight;
-    let position = 0;
-
-    pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, imgHeight);
-    heightLeft -= pdfHeight;
-
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdfHeight;
-    }
-
-    pdf.save(filename);
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
   } finally {
-    if (document.body.contains(container)) {
-      document.body.removeChild(container);
-    }
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
+    }, 2000);
   }
 }
 
