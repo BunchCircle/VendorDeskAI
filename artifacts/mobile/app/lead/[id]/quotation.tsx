@@ -1307,7 +1307,7 @@ export default function QuotationWorkspaceScreen() {
           />
 
           <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: isListening ? "#FFEBEE" : isTranscribing ? colors.primaryLight : colors.muted }]}
+            style={[styles.iconBtn, { backgroundColor: isListening ? "#FFEBEE" : isTranscribing ? colors.primaryLight : colors.muted }, { display: 'none' }]}
             onPress={handleMicPress}
             disabled={isTranscribing}
             activeOpacity={0.8}
