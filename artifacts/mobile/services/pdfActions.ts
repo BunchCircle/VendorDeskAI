@@ -1,5 +1,6 @@
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
 
 export async function downloadPDFWeb(html: string, filename: string): Promise<void> {
   const iframe = document.createElement("iframe");
@@ -51,16 +52,30 @@ export async function downloadPDFWeb(html: string, filename: string): Promise<vo
 export async function savePDFToDevice(
   tempUri: string,
   filename: string
-): Promise<void> {
-  const isAvailable = await Sharing.isAvailableAsync();
-  if (!isAvailable) {
-    throw new Error("Sharing is not available on this device.");
+): Promise<string> {
+  const destDir = FileSystem.documentDirectory;
+  if (!destDir) {
+    throw new Error("Document directory is not available on this device.");
   }
-  await Sharing.shareAsync(tempUri, {
-    mimeType: "application/pdf",
-    UTI: "com.adobe.pdf",
-    dialogTitle: filename,
-  });
+  const destUri = destDir + filename;
+  await FileSystem.copyAsync({ from: tempUri, to: destUri });
+
+  const isAvailable = await Sharing.isAvailableAsync();
+  if (isAvailable) {
+    await Sharing.shareAsync(destUri, {
+      mimeType: "application/pdf",
+      UTI: "com.adobe.pdf",
+      dialogTitle: filename,
+    });
+  } else {
+    const { Alert } = await import("react-native");
+    Alert.alert(
+      "PDF Saved",
+      `${filename} was saved to your device. Sharing is not available on this device.`
+    );
+  }
+
+  return destUri;
 }
 
 export async function shareViaWhatsApp(

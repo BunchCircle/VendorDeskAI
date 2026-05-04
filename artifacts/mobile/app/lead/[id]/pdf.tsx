@@ -110,6 +110,7 @@ export default function PDFViewerScreen() {
         await downloadPDFWeb(result, filename);
       } else {
         await savePDFToDevice(result, filename);
+        Alert.alert("PDF Saved!", `${filename} has been saved to your device.`);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
