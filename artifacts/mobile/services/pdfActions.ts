@@ -2,8 +2,18 @@ import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system";
 
+function escHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function downloadPDFWeb(html: string, filename: string): Promise<void> {
   const iframe = document.createElement("iframe");
+  iframe.setAttribute("sandbox", "allow-modals");
   iframe.style.position = "fixed";
   iframe.style.right = "0";
   iframe.style.bottom = "0";
@@ -21,7 +31,7 @@ export async function downloadPDFWeb(html: string, filename: string): Promise<vo
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${filename}</title>
+  <title>${escHtml(filename)}</title>
   <style>
     @media print {
       @page { margin: 0; size: A4; }
