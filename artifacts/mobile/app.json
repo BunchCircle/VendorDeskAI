@@ -17,11 +17,19 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.replit.vendordesk",
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["whatsapp"]
+        "LSApplicationQueriesSchemes": [
+          "whatsapp"
+        ],
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
       }
     },
     "android": {
-      "package": "com.replit.vendordesk"
+      "package": "com.replit.vendordesk",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -51,6 +59,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6161684a-474d-4a4d-bc0b-110fd91e67b2"
+      }
     }
   }
 }
