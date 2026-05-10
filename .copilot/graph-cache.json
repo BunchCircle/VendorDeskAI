@@ -1,0 +1,8 @@
+{
+  "lastUpdate": null,
+  "lastUpdateTimestamp": null,
+  "fileCount": null,
+  "graphExists": false,
+  "cacheStrategy": "update-if-older-than-24h",
+  "notes": "Metadata file for code-review-graph cache management. Update timestamps when graph is built or updated."
+}

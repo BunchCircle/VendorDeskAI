@@ -1,0 +1,23 @@
+services:
+  - name: vendordesk-api
+    type: web
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: pnpm run render:build
+    startCommand: pnpm run render:start
+    autoDeployTrigger: commit
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: PORT
+        value: 10000
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false

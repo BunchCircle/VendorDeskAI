@@ -16,9 +16,22 @@ export type AIResponse =
     }
   | { type: "error"; message: string };
 
+function normaliseBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
 function getApiBaseUrl(): string {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (apiUrl) return normaliseBaseUrl(apiUrl);
+
   const devDomain = process.env.EXPO_PUBLIC_DOMAIN;
-  if (devDomain) return `https://${devDomain}`;
+  if (devDomain) {
+    if (/^https?:\/\//i.test(devDomain)) {
+      return normaliseBaseUrl(devDomain);
+    }
+    return `https://${normaliseBaseUrl(devDomain)}`;
+  }
+
   return "";
 }
 
@@ -41,6 +54,13 @@ export async function parseRequirementWithAI(
 ): Promise<AIResponse> {
   try {
     const baseUrl = getApiBaseUrl();
+    if (!baseUrl) {
+      return {
+        type: "error",
+        message:
+          "AI is not configured yet. Set EXPO_PUBLIC_API_URL in the mobile .env file.",
+      };
+    }
     const response = await fetch(`${baseUrl}/api/ai/chat`, {
       method: "POST",
       headers: await getAiHeaders(),
@@ -137,6 +157,7 @@ export async function parseRequirementWithAI(
 export async function transcribeAudio(audioBase64: string, mimeType: string): Promise<string> {
   try {
     const baseUrl = getApiBaseUrl();
+    if (!baseUrl) return "";
     const response = await fetch(`${baseUrl}/api/ai/transcribe`, {
       method: "POST",
       headers: await getAiHeaders(),
@@ -156,6 +177,7 @@ export async function extractCatalogueFromFile(
 ): Promise<Array<{ name: string; price: number; unit: string }>> {
   try {
     const baseUrl = getApiBaseUrl();
+    if (!baseUrl) return [];
     const response = await fetch(`${baseUrl}/api/ai/extract-catalogue`, {
       method: "POST",
       headers: await getAiHeaders(),
@@ -174,6 +196,7 @@ export async function extractProductsFromText(
 ): Promise<Array<{ name: string; price: number; unit: string }>> {
   try {
     const baseUrl = getApiBaseUrl();
+    if (!baseUrl) return [];
     const response = await fetch(`${baseUrl}/api/ai/extract-products`, {
       method: "POST",
       headers: await getAiHeaders(),

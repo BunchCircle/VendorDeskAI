@@ -4,7 +4,14 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "dev": "EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN pnpm exec expo start --localhost --port $PORT",
+    "start": "expo start",
+    "dev": "expo start",
+    "start:dev-client": "expo start --dev-client",
+    "start:clear": "expo start --clear",
+    "start:lan": "expo start --lan",
+    "start:tunnel": "expo start --tunnel",
+    "build:android:development": "npx eas build --platform android --profile development",
+    "build:android:preview": "npx eas build --platform android --profile preview",
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -60,6 +67,7 @@
     "@supabase/supabase-js": "^2.101.1",
     "expo-audio": "~1.1.1",
     "expo-clipboard": "~8.0.8",
+    "expo-dev-client": "~6.0.16",
     "expo-document-picker": "^14.0.8",
     "expo-file-system": "^19.0.21",
     "expo-print": "^15.0.8",

@@ -1,6 +1,6 @@
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 function escHtml(value: string): string {
   return value
