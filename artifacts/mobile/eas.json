@@ -7,12 +7,22 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://zwghocdppzsnxxbxuzjq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3Z2hvY2RwcHpzbnh4Ynh1empxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjU1MzIsImV4cCI6MjA5MDk0MTUzMn0.gk-LJfX8iTAwSzTrQKv-vAJCRaLH0YF29320TKMnOqU",
+        "EXPO_PUBLIC_API_URL": "https://vendordesk-api.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://zwghocdppzsnxxbxuzjq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3Z2hvY2RwcHpzbnh4Ynh1empxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjU1MzIsImV4cCI6MjA5MDk0MTUzMn0.gk-LJfX8iTAwSzTrQKv-vAJCRaLH0YF29320TKMnOqU",
+        "EXPO_PUBLIC_API_URL": "https://vendordesk-api.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }

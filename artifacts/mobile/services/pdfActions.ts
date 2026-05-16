@@ -1,6 +1,7 @@
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
+import { Platform } from "react-native";
 
 function escHtml(value: string): string {
   return value
@@ -63,6 +64,32 @@ export async function savePDFToDevice(
   tempUri: string,
   filename: string
 ): Promise<string> {
+  if (Platform.OS === "android") {
+    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(
+      FileSystem.StorageAccessFramework.getUriForDirectoryInRoot("Download")
+    );
+
+    if (!permissions.granted) {
+      throw new Error("Storage permission was not granted.");
+    }
+
+    const base64 = await FileSystem.readAsStringAsync(tempUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const fileNameWithoutExtension = filename.replace(/\.pdf$/i, "");
+    const destUri = await FileSystem.StorageAccessFramework.createFileAsync(
+      permissions.directoryUri,
+      fileNameWithoutExtension,
+      "application/pdf"
+    );
+
+    await FileSystem.StorageAccessFramework.writeAsStringAsync(destUri, base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    return destUri;
+  }
+
   const destDir = FileSystem.documentDirectory;
   if (!destDir) {
     throw new Error("Document directory is not available on this device.");

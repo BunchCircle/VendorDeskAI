@@ -143,6 +143,7 @@ const styles = StyleSheet.create({
     boxShadow: "0px 4px 12px rgba(79, 70, 229, 0.3)",
   },
   gradientInner: {
+    alignSelf: "stretch",
     overflow: "hidden",
   },
   btn: {

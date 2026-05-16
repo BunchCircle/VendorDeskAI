@@ -4,11 +4,9 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
-import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { AppProvider, useApp } from "@/context/AppContext";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -59,23 +57,10 @@ function AuthGate() {
   return null;
 }
 
-function SyncOverlay() {
-  const { isOffline, isSyncing } = useApp();
-  const insets = useSafeAreaInsets();
-  return (
-    <SyncStatusBanner
-      isOffline={isOffline}
-      isSyncing={isSyncing}
-      topInset={insets.top}
-    />
-  );
-}
-
 function RootLayoutNav() {
   return (
     <>
       <AuthGate />
-      <SyncOverlay />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
@@ -123,9 +108,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppProvider>
             <GestureHandlerRootView>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
+              <RootLayoutNav />
             </GestureHandlerRootView>
           </AppProvider>
         </QueryClientProvider>
