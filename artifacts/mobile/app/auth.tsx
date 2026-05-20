@@ -137,8 +137,8 @@ export default function AuthScreen() {
               <LogoMark size={64} />
             </View>
             <View style={styles.headerText}>
-              <Text style={styles.appName}>VendorDesk.AI</Text>
-              <Text style={styles.tagline}>AI-Powered Quotations in Seconds</Text>
+              <Text style={styles.appName}>BillBanao.ai</Text>
+              <Text style={styles.tagline}>Phone Pe Quotation & Billing, Turant</Text>
             </View>
           </View>
 

@@ -27,8 +27,8 @@ export default function SplashScreen() {
           resizeMode="contain"
         />
         <View style={styles.textGroup}>
-          <Text style={styles.appName}>VendorDesk.ai</Text>
-          <Text style={styles.tagline}>Smart Quotation Maker</Text>
+          <Text style={styles.appName}>BillBanao.ai</Text>
+          <Text style={styles.tagline}>Phone Pe Quotation & Billing, Turant</Text>
         </View>
       </View>
       <View style={styles.loaderWrap}>

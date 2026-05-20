@@ -36,7 +36,7 @@ export function BrandWordmark({ size = "full" }: { size?: "full" | "compact" }) 
   return (
     <View style={styles.wordmark}>
       <Text style={[styles.wordmarkText, isCompact && styles.wordmarkTextCompact, { color: colors.foreground }]}>
-        VendorDesk
+        BillBanao
       </Text>
       <LinearGradient
         colors={["#4F46E5", "#0891B2"]}
@@ -44,7 +44,7 @@ export function BrandWordmark({ size = "full" }: { size?: "full" | "compact" }) 
         end={{ x: 1, y: 0 }}
         style={[styles.aiPill, isCompact && styles.aiPillCompact]}
       >
-        <Text style={[styles.aiText, isCompact && styles.aiTextCompact]}>.AI</Text>
+        <Text style={[styles.aiText, isCompact && styles.aiTextCompact]}>.ai</Text>
       </LinearGradient>
     </View>
   );
