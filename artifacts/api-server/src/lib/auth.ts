@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from "express";
 import { createClient } from "@supabase/supabase-js";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
+const AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
+const authCache = new Map<string, number>();
 
 function getSupabaseAdmin(): ReturnType<typeof createClient> | null {
   const url = process.env["SUPABASE_URL"] ?? "";
@@ -33,11 +35,19 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  const cachedUntil = authCache.get(token);
+  if (cachedUntil && cachedUntil > Date.now()) {
+    next();
+    return;
+  }
+
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) {
+    authCache.delete(token);
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
+  authCache.set(token, Date.now() + AUTH_CACHE_TTL_MS);
   next();
 }

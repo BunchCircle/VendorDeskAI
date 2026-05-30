@@ -16,8 +16,53 @@ export type AIResponse =
     }
   | { type: "error"; message: string };
 
+const MAX_AI_HISTORY_MESSAGES = 8;
+const MAX_AI_CATALOGUE_ITEMS = 120;
+
 function normaliseBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
+}
+
+function normaliseText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function tokenise(value: string): string[] {
+  return normaliseText(value)
+    .split(" ")
+    .filter((token) => token.length >= 2);
+}
+
+function getCatalogueForAI(userInput: string, catalogue: Product[]): Product[] {
+  if (catalogue.length <= MAX_AI_CATALOGUE_ITEMS) return catalogue;
+
+  const input = normaliseText(userInput);
+  const inputTokens = new Set(tokenise(userInput));
+
+  const scored = catalogue
+    .map((product, index) => {
+      const name = normaliseText(product.name);
+      const nameTokens = tokenise(product.name);
+      let score = 0;
+
+      if (name && input.includes(name)) score += 100;
+      if (name && name.includes(input)) score += 80;
+
+      for (const token of nameTokens) {
+        if (inputTokens.has(token)) score += 12;
+        else if (token.length >= 4 && input.includes(token)) score += 6;
+      }
+
+      return { product, score, index };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+
+  if (scored.length === 0) {
+    return catalogue.slice(0, MAX_AI_CATALOGUE_ITEMS);
+  }
+
+  return scored.slice(0, MAX_AI_CATALOGUE_ITEMS).map((item) => item.product);
 }
 
 function getApiBaseUrl(): string {
@@ -61,15 +106,17 @@ export async function parseRequirementWithAI(
           "AI is not configured yet. Set EXPO_PUBLIC_API_URL in the mobile .env file.",
       };
     }
+    const aiCatalogue = getCatalogueForAI(userInput, catalogue);
+    const recentHistory = conversationHistory.slice(-MAX_AI_HISTORY_MESSAGES);
     const response = await fetch(`${baseUrl}/api/ai/chat`, {
       method: "POST",
       headers: await getAiHeaders(),
       body: JSON.stringify({
         messages: [
-          ...conversationHistory,
+          ...recentHistory,
           { role: "user", content: userInput },
         ],
-        catalogue: catalogue.map((p) => ({
+        catalogue: aiCatalogue.map((p) => ({
           name: p.name,
           price: p.price,
           unit: p.unit,
